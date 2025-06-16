@@ -1,0 +1,53 @@
+.MMM-IsraelNews {
+    position: relative;
+    overflow: hidden;
+    font-family: Arial, sans-serif;
+    font-size: 20px;
+    color: #FFF;
+    direction: rtl;
+    text-align: right;
+    height: 200px; /* Fixed height for testing */
+    width: 100%;
+}
+
+@keyframes scroll {
+    0% {
+        transform: translateY(0%);
+    }
+    100% {
+        transform: translateY(-50%);
+    }
+}
+
+.MMM-IsraelNews .news-container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.MMM-IsraelNews .news-container.scrolling {
+    animation: scroll linear infinite;
+}
+
+.MMM-IsraelNews .news-item {
+    padding: 5px 0;
+    border-bottom: 1px solid #666;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+}
+
+.MMM-IsraelNews .news-item:last-child {
+    border-bottom: none;
+}
+
+.MMM-IsraelNews .news-favicon {
+    width: 16px;
+    height: 16px;
+    margin-left: 8px;
+    margin-right: 8px;
+    flex-shrink: 0;
+    vertical-align: middle;
+}

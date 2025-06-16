@@ -1,0 +1,21 @@
+{
+  "name": "MMM-IsraelNews",
+  "version": "1.0.0",
+  "description": "A MagicMirror module for displaying news headlines from Israeli news sources in Hebrew.",
+  "main": "MMM-IsraelNews.js",
+  "scripts": {
+    "start": "node node_helper.js"
+  },
+  "dependencies": {
+    "rss-parser": "^3.10.1"
+  },
+  "keywords": [
+    "magicmirror",
+    "news",
+    "rss",
+    "israel",
+    "hebrew"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}
