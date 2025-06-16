@@ -4,9 +4,11 @@ MMM-IsraelNews is a MagicMirror module that displays the latest news headlines f
 
 ## Features
 
-- Fetches news headlines from an Israeli news RSS feed.
-- Customizable number of displayed headlines (default is 6).
-- Vertical scrolling for headlines exceeding the display limit.
+- Fetches news headlines from multiple Israeli news RSS feeds.
+- Customizable number of displayed headlines (default is 10).
+- Smooth scrolling animation for headlines exceeding the display limit.
+- Displays favicons for different news sources.
+- Shows timestamps for each news item.
 - Easy integration with the MagicMirror framework.
 
 ## Installation
@@ -33,16 +35,38 @@ Add the following configuration to your `config/config.js` file:
   module: 'MMM-IsraelNews',
   position: 'top_bar', // Position where the module will be displayed
   config: {
-    rssFeed: 'https://www.ynet.co.il/Integration/StoryRss1854.xml', // RSS feed URL
-    displayLines: 6, // Number of lines to display
-    scroll: true // Enable scrolling
+    numLines: 10,        // Number of lines to display (default: 10)
+    scrollSpeed: 200,    // Scroll speed in milliseconds (default: 200)
+    updateInterval: 600, // Update interval in seconds (default: 600 = 10 minutes)
+    urls: [              // Array of RSS feed URLs
+      "https://www.ynet.co.il/Integration/StoryRss1854.xml",
+      // "https://www.srugim.co.il/feed",
+      // "https://rss.walla.co.il/feed/22",
+      // "https://www.maariv.co.il/Rss/RssFeedsMivzakiChadashot"
+    ]
   }
 }
 ```
 
+## Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `numLines` | Number | 10 | Number of news headlines to display at once |
+| `scrollSpeed` | Number | 200 | Speed of scrolling animation in milliseconds |
+| `updateInterval` | Number | 600 | How often to fetch new news in seconds (600 = 10 minutes) |
+| `urls` | Array | See example | Array of RSS feed URLs to fetch news from |
+
 ## Usage
 
-Once installed and configured, the MMM-IsraelNews module will automatically fetch and display the latest news headlines. You can adjust the `displayLines` option in the configuration to change how many headlines are shown at once.
+Once installed and configured, the MMM-IsraelNews module will automatically fetch and display the latest news headlines from the configured RSS feeds. The module will:
+
+- Display news with favicons from different sources
+- Show timestamps for each news item
+- Automatically scroll through headlines if there are more than `numLines`
+- Update news every `updateInterval` seconds
+
+You can customize the number of visible headlines, scroll speed, and add multiple RSS feeds by modifying the configuration options.
 
 ## License
 
