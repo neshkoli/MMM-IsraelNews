@@ -145,10 +145,16 @@ class IconUtils {
             /<link[^>]*rel=["'](?:icon|shortcut icon|apple-touch-icon)[^>]*href=["']([^"']*\.png[^"']*)[^>]*>/gi,
             /<link[^>]*href=["']([^"']*\.png[^"']*)[^>]*rel=["'](?:icon|shortcut icon|apple-touch-icon)[^>]*>/gi,
             
-            // Look for shortcut icon specifically (like Ynet's format)
+            // Look for og:image meta tags (often high-quality PNG images)
+            /<meta[^>]*property=["']og:image[^>]*content=["']([^"']*\.png[^"']*)[^>]*>/gi,
+            /<meta[^>]*content=["']([^"']*\.png[^"']*)[^>]*property=["']og:image[^>]*>/gi,
+            
+            // Look for shortcut icon specifically (like Walla's format with unquoted href)
+            /<link[^>]*rel=["']shortcut icon[^>]*href\s*=\s*([^"'\s>]+)[^>]*>/gi,
             /<link[^>]*rel=["']shortcut icon[^>]*href=["']([^"']*)[^>]*>/gi,
             
-            // Look for any icon types
+            // Look for any icon types (quoted and unquoted href)
+            /<link[^>]*rel=["'](?:icon|apple-touch-icon)[^>]*href\s*=\s*([^"'\s>]+)[^>]*>/gi,
             /<link[^>]*rel=["'](?:icon|apple-touch-icon)[^>]*href=["']([^"']*)[^>]*>/gi,
             /<link[^>]*href=["']([^"']*)[^>]*rel=["'](?:icon|apple-touch-icon)[^>]*>/gi,
             
@@ -193,6 +199,24 @@ class IconUtils {
             }
         }
 
+        // Also check for JSON-LD structured data logos
+        const jsonLdMatches = html.match(/<script type="application\/ld\+json">(.*?)<\/script>/gs);
+        if (jsonLdMatches) {
+            console.log(`IconUtils: Found ${jsonLdMatches.length} JSON-LD scripts, checking for logos`);
+            jsonLdMatches.forEach((match, index) => {
+                const jsonContent = match.replace(/<script[^>]*>|<\/script>/g, '');
+                try {
+                    const parsed = JSON.parse(jsonContent);
+                    if (parsed.logo && typeof parsed.logo === 'string') {
+                        console.log(`IconUtils: Found JSON-LD logo: ${parsed.logo}`);
+                        foundIcons.push({ url: parsed.logo, priority: this.getFaviconPriority(parsed.logo) });
+                    }
+                } catch (e) {
+                    // Ignore JSON parsing errors
+                }
+            });
+        }
+
         // Sort by priority (lower number = higher priority)
         foundIcons.sort((a, b) => a.priority - b.priority);
         
@@ -215,23 +239,36 @@ class IconUtils {
     getFaviconPriority(url) {
         const urlLower = url.toLowerCase();
         
-        // PNG files get highest priority
-        if (urlLower.includes('.png')) return 1;
+        // Favicon files get highest priority - they're designed for small sizes
+        if (urlLower.includes('favicon')) return 1;
         
-        // Apple touch icons are usually good quality
-        if (urlLower.includes('apple-touch-icon')) return 2;
+        // Shortcut icons are also designed for small display
+        if (urlLower.includes('shortcut')) return 2;
         
-        // SVG icons are scalable
-        if (urlLower.includes('.svg')) return 3;
+        // Apple touch icons are usually good quality for small sizes
+        if (urlLower.includes('apple-touch-icon')) return 3;
         
-        // Standard shortcut icons
-        if (urlLower.includes('shortcut')) return 4;
+        // ICO files are designed for favicons
+        if (urlLower.includes('.ico')) return 4;
         
-        // ICO files are last resort
-        if (urlLower.includes('.ico')) return 5;
+        // PNG files - but lower priority since they might be too detailed
+        if (urlLower.includes('.png')) {
+            // Small PNG files get better priority
+            if (urlLower.includes('16') || urlLower.includes('32') || urlLower.includes('small')) return 5;
+            return 6;
+        }
+        
+        // SVG icons are scalable but might be too detailed
+        if (urlLower.includes('.svg')) return 7;
+        
+        // JPG/JPEG images are usually too detailed for favicons
+        if (urlLower.includes('.jpg') || urlLower.includes('.jpeg')) return 8;
+        
+        // JSON-LD logos and og:images are often too detailed for small display
+        if (urlLower.includes('og') || urlLower.includes('logo') || urlLower.includes('brand')) return 9;
         
         // Everything else
-        return 6;
+        return 10;
     }
 
     /**
@@ -371,6 +408,110 @@ class IconUtils {
                 console.error(`IconUtils: Request timeout for ${url}`);
                 req.destroy();
                 reject(new Error('Request timeout'));
+            });
+
+            console.log(`IconUtils: Sending request...`);
+            req.end();
+        });
+    }
+
+    /**
+     * Download a file to memory buffer
+     * @param {string} url - The URL to download
+     * @returns {Promise<Buffer|null>} - The file buffer or null if failed
+     */
+    downloadFileToBuffer(url) {
+        return new Promise((resolve, reject) => {
+            console.log(`IconUtils: Starting download to memory buffer from ${url}`);
+            
+            const urlObj = new URL(url);
+            const client = urlObj.protocol === 'https:' ? https : http;
+            
+            const options = {
+                hostname: urlObj.hostname,
+                port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+                path: urlObj.pathname + (urlObj.search || ''),
+                method: 'GET',
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept': 'image/*,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1'
+                },
+                timeout: 30000,
+                rejectUnauthorized: false
+            };
+
+            console.log(`IconUtils: Request details:`, {
+                protocol: urlObj.protocol,
+                hostname: options.hostname,
+                port: options.port,
+                path: options.path,
+                method: options.method
+            });
+
+            let dataBuffer = Buffer.alloc(0);
+            let totalBytes = 0;
+
+            const req = client.request(options, (res) => {
+                console.log(`IconUtils: Response status: ${res.statusCode}`);
+                console.log(`IconUtils: Response headers:`, res.headers);
+
+                // Handle redirects
+                if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                    console.log(`IconUtils: Following redirect to: ${res.headers.location}`);
+                    
+                    let redirectUrl;
+                    if (res.headers.location.startsWith('http')) {
+                        redirectUrl = res.headers.location;
+                    } else if (res.headers.location.startsWith('/')) {
+                        redirectUrl = `${urlObj.protocol}//${urlObj.hostname}${res.headers.location}`;
+                    } else {
+                        redirectUrl = `${urlObj.protocol}//${urlObj.hostname}/${res.headers.location}`;
+                    }
+                    
+                    return this.downloadFileToBuffer(redirectUrl).then(resolve).catch(reject);
+                }
+
+                if (res.statusCode !== 200) {
+                    console.error(`IconUtils: HTTP error ${res.statusCode} for ${url}`);
+                    return resolve(null);
+                }
+
+                res.on('data', (chunk) => {
+                    dataBuffer = Buffer.concat([dataBuffer, chunk]);
+                    totalBytes += chunk.length;
+                    
+                    // Prevent downloading extremely large files
+                    if (totalBytes > 1024 * 1024) { // 1MB limit
+                        console.error(`IconUtils: File too large (${totalBytes} bytes), aborting download`);
+                        req.destroy();
+                        return resolve(null);
+                    }
+                });
+
+                res.on('end', () => {
+                    console.log(`IconUtils: Download completed, total bytes: ${totalBytes}`);
+                    resolve(dataBuffer);
+                });
+
+                res.on('error', (error) => {
+                    console.error(`IconUtils: Response error:`, error.message);
+                    resolve(null);
+                });
+            });
+
+            req.on('error', (error) => {
+                console.error(`IconUtils: Request error for ${url}:`, error.message);
+                resolve(null);
+            });
+
+            req.on('timeout', () => {
+                console.error(`IconUtils: Request timeout for ${url}`);
+                req.destroy();
+                resolve(null);
             });
 
             console.log(`IconUtils: Sending request...`);
@@ -565,10 +706,10 @@ class IconUtils {
     }
 
     /**
-     * Process favicon URL - convert ICO to GIF if needed
+     * Process favicon URL - convert ICO to data URL if needed (in memory)
      * @param {string} faviconUrl - The original favicon URL
      * @param {string} sourceUrl - The source RSS URL for cache key
-     * @returns {Promise<string>} - The final favicon URL (GIF if converted)
+     * @returns {Promise<string>} - The final favicon URL (data URL if converted)
      */
     async processFaviconUrl(faviconUrl, sourceUrl) {
         if (!faviconUrl) return null;
@@ -586,32 +727,23 @@ class IconUtils {
             return this.convertedCache.get(cacheKey);
         }
         
-        // If it's ICO, try to convert it or return the ICO URL directly
+        // If it's ICO, try to convert it in memory
         if (urlLower.includes('.ico') || faviconUrl.includes('favicon')) {
             try {
-                const domain = new URL(faviconUrl).hostname.replace(/\./g, '_');
-                const timestamp = Date.now();
-                const icoFileName = `${domain}_${timestamp}.ico`;
-                const icoPath = path.join(this.tempDir, icoFileName);
+                console.log(`IconUtils: Processing ICO favicon in memory for ${sourceUrl}`);
+                console.log(`IconUtils: Downloading ${faviconUrl} to memory buffer`);
                 
-                console.log(`IconUtils: Processing ICO favicon for ${sourceUrl}`);
-                console.log(`IconUtils: Downloading ${faviconUrl} to ${icoPath}`);
-                
-                // Download ICO file
-                await this.downloadFile(faviconUrl, icoPath);
-                const downloadedSize = fs.existsSync(icoPath) ? fs.statSync(icoPath).size : 0;
-                console.log(`IconUtils: ICO file downloaded, size: ${downloadedSize} bytes`);
-                
-                if (downloadedSize === 0) {
-                    console.log(`IconUtils: Downloaded ICO file is empty, returning original URL`);
+                // Download ICO file to memory
+                const icoBuffer = await this.downloadFileToBuffer(faviconUrl);
+                if (!icoBuffer || icoBuffer.length === 0) {
+                    console.log(`IconUtils: Failed to download ICO file or empty buffer, returning original URL`);
+                    this.convertedCache.set(cacheKey, faviconUrl);
                     return faviconUrl;
                 }
                 
-                // Try to extract PNG data from ICO
-                const icoBuffer = fs.readFileSync(icoPath);
-                console.log(`IconUtils: Analyzing ICO file, buffer length: ${icoBuffer.length} bytes`);
+                console.log(`IconUtils: ICO file downloaded to memory, size: ${icoBuffer.length} bytes`);
                 
-                // Look for embedded PNG data first
+                // Try to extract PNG data from ICO
                 const pngSignature = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
                 const pngStart = icoBuffer.indexOf(pngSignature);
                 
@@ -639,10 +771,12 @@ class IconUtils {
                     }
                 }
                 
-                // If no PNG found, just return the original ICO URL
-                // Modern browsers can display ICO files directly
-                console.log(`IconUtils: No PNG data found in ICO, returning original ICO URL: ${faviconUrl}`);
+                // If no PNG found, return the original ICO URL for better browser compatibility
+                console.log(`IconUtils: No PNG data found in ICO, returning original URL for better browser compatibility`);
+                
                 this.convertedCache.set(cacheKey, faviconUrl);
+                console.log(`IconUtils: Using original ICO URL for ${sourceUrl}`);
+                
                 return faviconUrl;
                 
             } catch (error) {
@@ -675,10 +809,16 @@ class IconUtils {
         }
 
         try {
-            const mainDomain = this.extractMainDomain(rssUrl);
+            let mainDomain = this.extractMainDomain(rssUrl);
             if (!mainDomain) {
                 console.log(`IconUtils: Could not extract main domain from ${rssUrl}`);
                 return null;
+            }
+
+            // Special handling for Walla RSS - use www.walla.co.il instead of rss.walla.co.il
+            if (rssUrl.includes('walla.co.il') && mainDomain.includes('rss.walla.co.il')) {
+                mainDomain = 'https://www.walla.co.il';
+                console.log(`IconUtils: Using main Walla domain: ${mainDomain}`);
             }
 
             console.log(`IconUtils: Fetching favicon for ${rssUrl} from ${mainDomain}`);
@@ -707,14 +847,20 @@ class IconUtils {
             console.error(`IconUtils: Error fetching favicon for ${rssUrl}:`, error.message);
             
             // Fallback to standard favicon.ico
-            const mainDomain = this.extractMainDomain(rssUrl);
-            const fallbackUrl = mainDomain ? mainDomain + '/favicon.ico' : null;
+            let fallbackDomain = this.extractMainDomain(rssUrl);
             
-            console.log(`IconUtils: Using fallback URL: ${fallbackUrl}`);
-            this.cache.set(rssUrl, fallbackUrl);
+            // Special handling for Walla RSS - use www.walla.co.il for fallback too
+            if (rssUrl.includes('walla.co.il') && fallbackDomain && fallbackDomain.includes('rss.walla.co.il')) {
+                fallbackDomain = 'https://www.walla.co.il';
+            }
             
-            // Process the fallback URL (convert ICO to GIF if needed)
-            return await this.processFaviconUrl(fallbackUrl, rssUrl);
+            if (fallbackDomain) {
+                const fallbackUrl = fallbackDomain + '/favicon.ico';
+                console.log(`IconUtils: Using fallback favicon: ${fallbackUrl}`);
+                return await this.processFaviconUrl(fallbackUrl, rssUrl);
+            }
+            
+            return null;
         }
     }
 

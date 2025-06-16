@@ -1,13 +1,11 @@
 .MMM-IsraelNews {
     position: relative;
     overflow: hidden;
-    font-family: Arial, sans-serif;
-    font-size: 20px;
     color: #FFF;
     direction: rtl;
     text-align: right;
-    height: 200px; /* Fixed height for testing */
-    width: 100%;
+    /* height: 200px; Fixed height for testing */
+    /* width: 100%; */
 }
 
 @keyframes scroll {

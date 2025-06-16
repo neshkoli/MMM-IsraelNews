@@ -1,11 +1,13 @@
 Module.register("MMM-IsraelNews", {
     defaults: {
         numLines: 10,
-        scrollSpeed: 100,
+        scrollSpeed: 200,
         updateInterval: 600,
         urls: [
-            "https://www.ynet.co.il/Integration/StoryRss1854.xml",
-            "https://www.srugim.co.il/feed"
+                "https://www.ynet.co.il/Integration/StoryRss1854.xml",
+                // "https://www.srugim.co.il/feed",
+                // "https://rss.walla.co.il/feed/22",
+                // "https://www.maariv.co.il/Rss/RssFeedsMivzakiChadashot"
         ]
     },
 
