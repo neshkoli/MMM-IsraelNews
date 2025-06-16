@@ -4,9 +4,9 @@
     color: #FFF;
     direction: rtl;
     text-align: right;
-    width: 60vw; /* 2/3 of screen width */
-    max-height: 50vh; /* Up to half of screen height */
-    font-size: 1.2em; /* Double the font size */
+    width: 70vw; /* 2/3 of screen width */
+    max-height: 40vh; /* Up to half of screen height */
+    font-size: 1.1em; /* Double the font size */
 }
 
 @keyframes scroll {
