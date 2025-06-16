@@ -4,8 +4,9 @@
     color: #FFF;
     direction: rtl;
     text-align: right;
-    /* height: 200px; Fixed height for testing */
-    /* width: 100%; */
+    width: 60vw; /* 2/3 of screen width */
+    max-height: 50vh; /* Up to half of screen height */
+    font-size: 1.2em; /* Double the font size */
 }
 
 @keyframes scroll {
@@ -30,22 +31,41 @@
 .MMM-IsraelNews .news-item {
     padding: 5px 0;
     border-bottom: 1px solid #666;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     display: flex;
-    align-items: center;
+    align-items: center; /* Center align the icon/time with the headline */
+    line-height: 1.4; /* Better line spacing for wrapped text */
 }
 
 .MMM-IsraelNews .news-item:last-child {
     border-bottom: none;
 }
 
-.MMM-IsraelNews .news-favicon {
-    width: 16px;
-    height: 16px;
-    margin-left: 8px;
-    margin-right: 8px;
+.MMM-IsraelNews .news-icon-time {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     flex-shrink: 0;
-    vertical-align: middle;
+    margin-left: 8px;
+    margin-right: 12px;
+    min-width: 50px; /* Ensure consistent width for alignment */
+}
+
+.MMM-IsraelNews .news-favicon {
+    width: 32px; /* Double the size to match font size increase */
+    height: 32px; /* Double the size to match font size increase */
+    margin-bottom: 2px; /* Small gap between icon and time */
+}
+
+.MMM-IsraelNews .news-time {
+    font-size: 0.7em; /* Smaller time text */
+    color: #AAA; /* Lighter color for time */
+    white-space: nowrap; /* Don't wrap the time */
+    text-align: center;
+}
+
+.MMM-IsraelNews .news-headline {
+    flex: 1; /* Take up remaining space */
+    word-wrap: break-word; /* Break long words if necessary */
+    hyphens: auto; /* Add hyphenation for better line breaks */
+    line-height: 1.4; /* Good line spacing */
 }

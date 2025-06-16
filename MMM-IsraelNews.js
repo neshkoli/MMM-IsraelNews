@@ -69,25 +69,42 @@ Module.register("MMM-IsraelNews", {
                 const newsItem = document.createElement("div");
                 newsItem.className = "news-item";
                 
+                // Create favicon and timestamp container
+                const iconTimeContainer = document.createElement("div");
+                iconTimeContainer.className = "news-icon-time";
+                
                 // Create favicon image element
-                let faviconHTML = "";
                 if (item.favicon) {
-                    faviconHTML = `<img src="${item.favicon}" class="news-favicon" onerror="this.style.display='none'"> `;
+                    const faviconImg = document.createElement("img");
+                    faviconImg.src = item.favicon;
+                    faviconImg.className = "news-favicon";
+                    faviconImg.onerror = function() { this.style.display = 'none'; };
+                    iconTimeContainer.appendChild(faviconImg);
                 }
                 
                 // Format the timestamp from pubDate
-                let timeStamp = "";
                 if (item.pubDate) {
                     const date = new Date(item.pubDate);
                     if (!isNaN(date.getTime())) {
-                        timeStamp = date.toLocaleTimeString('he-IL', { 
+                        const timeStamp = date.toLocaleTimeString('he-IL', { 
                             hour: '2-digit', 
                             minute: '2-digit' 
-                        }) + " - ";
+                        });
+                        const timeElement = document.createElement("span");
+                        timeElement.className = "news-time";
+                        timeElement.textContent = timeStamp;
+                        iconTimeContainer.appendChild(timeElement);
                     }
                 }
                 
-                newsItem.innerHTML = faviconHTML + timeStamp + item.title;
+                // Create headline container
+                const headlineContainer = document.createElement("div");
+                headlineContainer.className = "news-headline";
+                headlineContainer.textContent = item.title;
+                
+                // Add both containers to the news item
+                newsItem.appendChild(iconTimeContainer);
+                newsItem.appendChild(headlineContainer);
                 newsContainer.appendChild(newsItem);
             });
         };
