@@ -2,6 +2,8 @@
 
 MMM-IsraelNews is a MagicMirror module that displays the latest news headlines from Israel in Hebrew. It fetches news from an RSS feed and presents it in a customizable scrolling ticker format.
 
+![MagicMirror Screenshot](screenshot.png)
+
 ## Features
 
 - Fetches news headlines from multiple Israeli news RSS feeds.
