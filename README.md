@@ -1,13 +1,12 @@
 # MMM-IsraelNews
 
-MMM-IsraelNews is a MagicMirror module that displays the latest news headlines from Israel in Hebrew. It fetches news from an RSS feed and presents it in a customizable scrolling ticker format.
+MMM-IsraelNews is a MagicMirror module that displays the latest news headlines from Israel in Hebrew. It fetches news from an RSS feed and presents it in a vertical scrolling format.
 
 ![MagicMirror Screenshot](screenshot.png)
 
 ## Features
 
 - Fetches news headlines from multiple Israeli news RSS feeds.
-- Customizable number of displayed headlines (default is 10).
 - Smooth scrolling animation for headlines exceeding the display limit.
 - Displays favicons for different news sources.
 - Shows timestamps for each news item.
@@ -37,7 +36,6 @@ Add the following configuration to your `config/config.js` file:
   module: 'MMM-IsraelNews',
   position: 'top_bar', // Position where the module will be displayed
   config: {
-    numLines: 10,        // Number of lines to display (default: 10)
     scrollSpeed: 200,    // Scroll speed in milliseconds (default: 200)
     updateInterval: 600, // Update interval in seconds (default: 600 = 10 minutes)
     urls: [              // Array of RSS feed URLs
@@ -54,7 +52,6 @@ Add the following configuration to your `config/config.js` file:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `numLines` | Number | 10 | Number of news headlines to display at once |
 | `scrollSpeed` | Number | 200 | Speed of scrolling animation in milliseconds |
 | `updateInterval` | Number | 600 | How often to fetch new news in seconds (600 = 10 minutes) |
 | `urls` | Array | See example | Array of RSS feed URLs to fetch news from |
@@ -65,7 +62,6 @@ Once installed and configured, the MMM-IsraelNews module will automatically fetc
 
 - Display news with favicons from different sources
 - Show timestamps for each news item
-- Automatically scroll through headlines if there are more than `numLines`
 - Update news every `updateInterval` seconds
 
 You can customize the number of visible headlines, scroll speed, and add multiple RSS feeds by modifying the configuration options.
