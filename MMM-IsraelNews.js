@@ -3,6 +3,7 @@ Module.register("MMM-IsraelNews", {
         numLines: 10,
         scrollSpeed: 200,
         updateInterval: 600,
+        newsHoursBack: 4, // Show news from the last 4 hours only
         urls: [
                 "https://www.ynet.co.il/Integration/StoryRss1854.xml",
                 // "https://www.srugim.co.il/feed",
@@ -16,7 +17,10 @@ Module.register("MMM-IsraelNews", {
         this.newsItems = [];
         this.loaded = false;
         Log.info("MMM-IsraelNews: Sending GET_NEWS request with URLs: " + this.config.urls.join(", "));
-        this.sendSocketNotification("GET_NEWS", this.config.urls);
+        this.sendSocketNotification("GET_NEWS", {
+            urls: this.config.urls,
+            newsHoursBack: this.config.newsHoursBack
+        });
         this.scheduleUpdate();
     },
 
@@ -40,7 +44,10 @@ Module.register("MMM-IsraelNews", {
 
     scheduleUpdate: function() {
         setInterval(() => {
-            this.sendSocketNotification("GET_NEWS", this.config.urls);
+            this.sendSocketNotification("GET_NEWS", {
+                urls: this.config.urls,
+                newsHoursBack: this.config.newsHoursBack
+            });
         }, this.config.updateInterval);
     },
 

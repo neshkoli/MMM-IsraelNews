@@ -36,14 +36,24 @@ module.exports = NodeHelper.create({
         Log.info("MMM-IsraelNews: Node helper started and RSS parser initialized with SSL workaround");
     },
 
-    getNews: function(urls) {
+    getNews: function(config) {
         const self = this;
+        
+        // Support both old format (just URLs) and new format (config object)
+        const urls = Array.isArray(config) ? config : config.urls;
+        const newsHoursBack = typeof config === 'object' && !Array.isArray(config) ? config.newsHoursBack : 24; // Default to 24 hours for backward compatibility
         
         // Handle both single URL (backward compatibility) and array of URLs
         const urlArray = Array.isArray(urls) ? urls : [urls];
         
         console.log("MMM-IsraelNews: Fetching news from " + urlArray.length + " sources: " + urlArray.join(", "));
+        console.log("MMM-IsraelNews: Filtering news from last " + newsHoursBack + " hours");
         Log.info("MMM-IsraelNews: Fetching news from " + urlArray.length + " sources: " + urlArray.join(", "));
+        Log.info("MMM-IsraelNews: Filtering news from last " + newsHoursBack + " hours");
+        
+        // Calculate the cutoff time
+        const cutoffTime = new Date();
+        cutoffTime.setHours(cutoffTime.getHours() - newsHoursBack);
         
         // First, get favicon URLs for all sources
         this.iconUtils.getFaviconUrls(urlArray)
@@ -84,16 +94,31 @@ module.exports = NodeHelper.create({
                 console.log("MMM-IsraelNews: Total items collected: " + allNewsItems.length);
                 Log.info("MMM-IsraelNews: Total items collected: " + allNewsItems.length);
                 
-                // Sort by publication date (newest first)
-                allNewsItems.sort((a, b) => {
-                    const dateA = new Date(a.pubDate);
-                    const dateB = new Date(b.pubDate);
-                    return dateB - dateA; // Descending order (newest first)
+                // Filter items by publication date (only show items within the specified hours back)
+                const filteredNewsItems = allNewsItems.filter(item => {
+                    if (!item.pubDate) {
+                        return true; // Keep items without publication date
+                    }
+                    const itemDate = new Date(item.pubDate);
+                    if (isNaN(itemDate.getTime())) {
+                        return true; // Keep items with invalid dates
+                    }
+                    return itemDate >= cutoffTime;
                 });
                 
-                console.log("MMM-IsraelNews: Sending NEWS_RESULT with " + allNewsItems.length + " sorted items");
-                Log.info("MMM-IsraelNews: Sending NEWS_RESULT with " + allNewsItems.length + " sorted items");
-                self.sendSocketNotification("NEWS_RESULT", allNewsItems);
+                console.log("MMM-IsraelNews: Items after time filtering: " + filteredNewsItems.length + " (from last " + newsHoursBack + " hours)");
+                Log.info("MMM-IsraelNews: Items after time filtering: " + filteredNewsItems.length + " (from last " + newsHoursBack + " hours)");
+                
+                // Sort by publication date (oldest first)
+                filteredNewsItems.sort((a, b) => {
+                    const dateA = new Date(a.pubDate);
+                    const dateB = new Date(b.pubDate);
+                    return dateA - dateB; // Ascending order (oldest first)
+                });
+                
+                console.log("MMM-IsraelNews: Sending NEWS_RESULT with " + filteredNewsItems.length + " sorted items (oldest first)");
+                Log.info("MMM-IsraelNews: Sending NEWS_RESULT with " + filteredNewsItems.length + " sorted items (oldest first)");
+                self.sendSocketNotification("NEWS_RESULT", filteredNewsItems);
             })
             .catch(err => {
                 console.error("MMM-IsraelNews: Error processing feeds: ", err.message);
