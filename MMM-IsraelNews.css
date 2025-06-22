@@ -65,7 +65,9 @@
 
 .MMM-IsraelNews .news-headline {
   flex: 1; /* Take up remaining space */
-  word-wrap: break-word; /* Break long words if necessary */
+  word-break: keep-all; /* Prevent breaking words in the middle */
+  overflow-wrap: break-word; /* Break extremely long words only as last resort */
+  white-space: normal; /* Allow normal wrapping */
   hyphens: auto; /* Add hyphenation for better line breaks */
   line-height: 1.4; /* Good line spacing */
 }
