@@ -4,7 +4,7 @@
   color: #fff;
   direction: rtl;
   text-align: right;
-  width: 50vw; /* 3/4 of screen width */
+  width: 70vw; /* 3/4 of screen width */
   max-height: 33vh; /* Up to third of screen height */
   font-size: 1.1em; /* Double the font size */
   box-sizing: border-box; /* Include padding in width calculation */
