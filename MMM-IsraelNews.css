@@ -1,12 +1,15 @@
 .MMM-IsraelNews {
   position: relative;
-  overflow: hidden;
+  overflow: clip;
   color: #fff;
   direction: rtl;
   text-align: right;
-  width: 75vw; /* 3/4 of screen width */
+  width: 50vw; /* 3/4 of screen width */
   max-height: 33vh; /* Up to third of screen height */
   font-size: 1.1em; /* Double the font size */
+  box-sizing: border-box; /* Include padding in width calculation */
+  padding: 0 8px; /* Add horizontal padding to prevent cutoff */
+  font-family: "Roboto", "Helvetica", sans-serif; /* Explicit font fallback for Pi */
 }
 
 @keyframes scroll {
@@ -69,5 +72,8 @@
   overflow-wrap: break-word; /* Break extremely long words only as last resort */
   white-space: normal; /* Allow normal wrapping */
   hyphens: auto; /* Add hyphenation for better line breaks */
-  line-height: 1.4; /* Good line spacing */
+  line-height: 1.5; /* Increased line height for better visibility on Pi */
+  padding-right: 4px; /* Extra padding to prevent right edge cutoff */
+  text-overflow: ellipsis; /* Fallback for extremely long text */
+  min-height: 1.5em; /* Ensure minimum height for text visibility */
 }
