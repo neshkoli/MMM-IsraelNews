@@ -3,16 +3,251 @@ const http = require('http');
 const { URL } = require('url');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 class IconUtils {
     constructor() {
         this.cache = new Map(); // Cache favicon URLs to avoid repeated requests
         this.convertedCache = new Map(); // Cache converted PNG files
         this.tempDir = path.join(__dirname, 'temp_icons');
+        this.cacheIndexFile = path.join(this.tempDir, 'cache_index.json');
         
         // Create temp directory if it doesn't exist
         if (!fs.existsSync(this.tempDir)) {
             fs.mkdirSync(this.tempDir, { recursive: true });
+        }
+        
+        // Validate and clean corrupted files first
+        this.validateAndCleanCache();
+        
+        // Load existing cache index
+        this.loadCacheIndex();
+    }
+
+    /**
+     * Load the cache index from disk
+     */
+    loadCacheIndex() {
+        try {
+            if (fs.existsSync(this.cacheIndexFile)) {
+                const indexData = fs.readFileSync(this.cacheIndexFile, 'utf8');
+                const index = JSON.parse(indexData);
+                
+                // Restore cache from disk index
+                for (const [url, cacheInfo] of Object.entries(index)) {
+                    if (cacheInfo.cachedFile && fs.existsSync(cacheInfo.cachedFile)) {
+                        this.cache.set(url, cacheInfo.cachedFile);
+                        console.log(`IconUtils: Loaded cached icon from disk: ${url} -> ${cacheInfo.cachedFile}`);
+                    }
+                }
+                
+                console.log(`IconUtils: Loaded ${Object.keys(index).length} cached icons from disk`);
+            }
+        } catch (error) {
+            console.error('IconUtils: Error loading cache index:', error.message);
+        }
+    }
+
+    /**
+     * Save the cache index to disk
+     */
+    saveCacheIndex() {
+        try {
+            const index = {};
+            for (const [url, cachedFile] of this.cache.entries()) {
+                if (cachedFile && cachedFile.startsWith(this.tempDir)) {
+                    index[url] = {
+                        cachedFile: cachedFile,
+                        timestamp: Date.now()
+                    };
+                }
+            }
+            
+            fs.writeFileSync(this.cacheIndexFile, JSON.stringify(index, null, 2));
+            console.log(`IconUtils: Saved cache index with ${Object.keys(index).length} entries`);
+        } catch (error) {
+            console.error('IconUtils: Error saving cache index:', error.message);
+        }
+    }
+
+    /**
+     * Generate a safe filename for caching
+     * @param {string} url - The URL to generate a filename for
+     * @returns {string} - A safe filename
+     */
+    generateCacheFilename(url) {
+        const hash = crypto.createHash('md5').update(url).digest('hex');
+        const urlObj = new URL(url);
+        const domain = urlObj.hostname.replace(/[^a-zA-Z0-9]/g, '_');
+        return `${domain}_${hash}.png`;
+    }
+
+    /**
+     * Check if an icon is cached on disk
+     * @param {string} url - The URL to check
+     * @returns {string|null} - The cached file path or null if not cached
+     */
+    getCachedIconPath(url) {
+        const filename = this.generateCacheFilename(url);
+        const cachedPath = path.join(this.tempDir, filename);
+        
+        if (fs.existsSync(cachedPath)) {
+            console.log(`IconUtils: Found cached icon on disk: ${cachedPath}`);
+            return cachedPath;
+        }
+        
+        return null;
+    }
+
+    /**
+     * Save an icon to disk cache
+     * @param {string} url - The source URL
+     * @param {Buffer} iconData - The icon data to save
+     * @returns {string} - The path where the icon was saved
+     */
+    saveIconToCache(url, iconData) {
+        try {
+            const filename = this.generateCacheFilename(url);
+            const cachedPath = path.join(this.tempDir, filename);
+            
+            fs.writeFileSync(cachedPath, iconData);
+            console.log(`IconUtils: Saved icon to cache: ${cachedPath}`);
+            
+            // Update cache index
+            this.cache.set(url, cachedPath);
+            this.saveCacheIndex();
+            
+            return cachedPath;
+        } catch (error) {
+            console.error('IconUtils: Error saving icon to cache:', error.message);
+            return null;
+        }
+    }
+
+    /**
+     * Validate that downloaded data is a valid image file
+     * @param {Buffer} imageData - The image data to validate
+     * @param {string} originalUrl - The original URL for context
+     * @returns {boolean} - Whether the data is a valid image
+     */
+    isValidImageData(imageData, originalUrl) {
+        if (!imageData || imageData.length === 0) {
+            return false;
+        }
+        
+        // Check for common image signatures
+        const pngSignature = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+        const gifSignature = Buffer.from([0x47, 0x49, 0x46, 0x38]); // GIF87a or GIF89a
+        const jpegSignature = Buffer.from([0xFF, 0xD8, 0xFF]);
+        const icoSignature = Buffer.from([0x00, 0x00, 0x01, 0x00]); // ICO file signature
+        
+        // Check for PNG
+        if (imageData.length >= 8 && imageData.slice(0, 8).equals(pngSignature)) {
+            return true;
+        }
+        
+        // Check for GIF
+        if (imageData.length >= 4 && imageData.slice(0, 4).equals(gifSignature)) {
+            return true;
+        }
+        
+        // Check for JPEG
+        if (imageData.length >= 3 && imageData.slice(0, 3).equals(jpegSignature)) {
+            return true;
+        }
+        
+        // Check for ICO (more lenient validation)
+        if (imageData.length >= 6) {
+            // ICO files start with 0x00000100 (reserved, type, count)
+            const icoHeader = imageData.slice(0, 4);
+            if (icoHeader.equals(icoSignature)) {
+                return true;
+            }
+            
+            // Some ICO files might have different header formats
+            // Check if it contains PNG data embedded within
+            const pngStart = imageData.indexOf(pngSignature);
+            if (pngStart !== -1) {
+                return true;
+            }
+        }
+        
+        // For URLs that are clearly icon-related, be more lenient
+        const urlLower = originalUrl.toLowerCase();
+        if (urlLower.includes('.ico') || urlLower.includes('favicon')) {
+            console.log(`IconUtils: Accepting potentially valid ICO file from ${originalUrl} (${imageData.length} bytes)`);
+            return true;
+        }
+        
+        return false;
+    }
+
+    /**
+     * Download and cache an icon from URL
+     * @param {string} iconUrl - The icon URL to download
+     * @param {string} sourceUrl - The source RSS URL for cache key
+     * @returns {Promise<string>} - The cached file path or original URL if failed
+     */
+    async downloadAndCacheIcon(iconUrl, sourceUrl) {
+        try {
+            console.log(`IconUtils: Downloading and caching icon: ${iconUrl}`);
+            
+            // Download the icon data
+            const iconData = await this.downloadFileToBuffer(iconUrl);
+            if (!iconData || iconData.length === 0) {
+                console.log(`IconUtils: Failed to download icon data from ${iconUrl}`);
+                return iconUrl; // Return original URL as fallback
+            }
+            
+            // Validate that it's a valid image file
+            if (!this.isValidImageData(iconData, iconUrl)) {
+                console.log(`IconUtils: Downloaded data is not a valid image from ${iconUrl}`);
+                return iconUrl; // Return original URL as fallback
+            }
+            
+            // Save to cache
+            const cachedPath = this.saveIconToCache(sourceUrl, iconData);
+            if (cachedPath) {
+                return cachedPath;
+            }
+            
+            return iconUrl; // Return original URL if caching failed
+        } catch (error) {
+            console.error(`IconUtils: Error downloading and caching icon:`, error.message);
+            return iconUrl; // Return original URL as fallback
+        }
+    }
+
+    /**
+     * Clean up old cached files (older than 30 days)
+     */
+    cleanupOldCache() {
+        try {
+            const files = fs.readdirSync(this.tempDir);
+            const now = Date.now();
+            const maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+            let cleanedCount = 0;
+            
+            for (const file of files) {
+                if (file === 'cache_index.json') continue; // Skip the index file
+                
+                const filePath = path.join(this.tempDir, file);
+                const stats = fs.statSync(filePath);
+                
+                if (now - stats.mtime.getTime() > maxAge) {
+                    fs.unlinkSync(filePath);
+                    cleanedCount++;
+                    console.log(`IconUtils: Cleaned up old cached file: ${file}`);
+                }
+            }
+            
+            if (cleanedCount > 0) {
+                console.log(`IconUtils: Cleaned up ${cleanedCount} old cached files`);
+                // Reload cache index after cleanup
+                this.loadCacheIndex();
+            }
+        } catch (error) {
+            console.error('IconUtils: Error cleaning up old cache:', error.message);
         }
     }
 
@@ -714,6 +949,11 @@ class IconUtils {
     async processFaviconUrl(faviconUrl, sourceUrl) {
         if (!faviconUrl) return null;
         
+        // Check if it's already a data URL or file path
+        if (faviconUrl.startsWith('data:') || faviconUrl.startsWith('file://')) {
+            return faviconUrl;
+        }
+        
         // Check if it's already PNG, GIF, or SVG - return directly
         const urlLower = faviconUrl.toLowerCase();
         if (urlLower.includes('.png') || urlLower.includes('.gif') || urlLower.includes('.svg') || urlLower.includes('.jpg') || urlLower.includes('.jpeg')) {
@@ -727,10 +967,10 @@ class IconUtils {
             return this.convertedCache.get(cacheKey);
         }
         
-        // If it's ICO, try to convert it in memory
+        // If it's ICO or favicon-related, try to process it
         if (urlLower.includes('.ico') || faviconUrl.includes('favicon')) {
             try {
-                console.log(`IconUtils: Processing ICO favicon in memory for ${sourceUrl}`);
+                console.log(`IconUtils: Processing ICO favicon for ${sourceUrl}`);
                 console.log(`IconUtils: Downloading ${faviconUrl} to memory buffer`);
                 
                 // Download ICO file to memory
@@ -771,13 +1011,15 @@ class IconUtils {
                     }
                 }
                 
-                // If no PNG found, return the original ICO URL for better browser compatibility
-                console.log(`IconUtils: No PNG data found in ICO, returning original URL for better browser compatibility`);
+                // If no PNG found, try to create a simple data URL from the ICO
+                console.log(`IconUtils: No PNG data found in ICO, creating data URL from ICO data`);
+                const base64IcoData = icoBuffer.toString('base64');
+                const icoDataUrl = `data:image/x-icon;base64,${base64IcoData}`;
                 
-                this.convertedCache.set(cacheKey, faviconUrl);
-                console.log(`IconUtils: Using original ICO URL for ${sourceUrl}`);
+                this.convertedCache.set(cacheKey, icoDataUrl);
+                console.log(`IconUtils: Created ICO data URL for ${sourceUrl}`);
                 
-                return faviconUrl;
+                return icoDataUrl;
                 
             } catch (error) {
                 console.error(`IconUtils: Error processing ICO favicon for ${sourceUrl}:`, error.message);
@@ -792,6 +1034,7 @@ class IconUtils {
         // For any other format, return as-is
         return faviconUrl;
     }
+
     /**
      * Get favicon URL for a given RSS feed URL
      * @param {string} rssUrl - The RSS feed URL
@@ -800,11 +1043,24 @@ class IconUtils {
     async getFaviconUrl(rssUrl) {
         console.log(`IconUtils: Getting favicon for RSS URL: ${rssUrl}`);
         
-        // Check cache first
+        // Check disk cache first
+        const diskCachedPath = this.getCachedIconPath(rssUrl);
+        if (diskCachedPath) {
+            // Convert cached file to data URL
+            const dataUrl = this.fileToDataUrl(diskCachedPath);
+            if (dataUrl) {
+                return dataUrl;
+            } else {
+                // Remove invalid cache entry
+                this.cache.delete(rssUrl);
+                this.saveCacheIndex();
+            }
+        }
+        
+        // Check in-memory cache
         if (this.cache.has(rssUrl)) {
             const cachedUrl = this.cache.get(rssUrl);
             console.log(`IconUtils: Found cached favicon URL: ${cachedUrl}`);
-            // Process the cached URL (might convert ICO to GIF)
             return await this.processFaviconUrl(cachedUrl, rssUrl);
         }
 
@@ -826,22 +1082,24 @@ class IconUtils {
             const html = await this.fetchHTML(mainDomain);
             console.log(`IconUtils: Fetched HTML, length: ${html.length} characters`);
             
-            // Log a sample of the HTML to see what we're working with
-            const htmlSample = html.substring(0, 2000);
-            console.log(`IconUtils: HTML sample: ${htmlSample}`);
-            
             const faviconUrl = this.parseHtmlForFavicon(html, mainDomain);
-            
             console.log(`IconUtils: Found favicon URL: ${faviconUrl}`);
             
-            // Cache the result
-            this.cache.set(rssUrl, faviconUrl);
+            // Download and cache the icon
+            if (faviconUrl) {
+                const cachedPath = await this.downloadAndCacheIcon(faviconUrl, rssUrl);
+                if (cachedPath && cachedPath.startsWith(this.tempDir)) {
+                    // Convert to data URL for browser compatibility
+                    const dataUrl = this.fileToDataUrl(cachedPath);
+                    if (dataUrl) {
+                        return dataUrl;
+                    }
+                }
+                // Fallback to original URL if caching failed
+                return faviconUrl;
+            }
             
-            // Process the favicon (convert ICO to GIF if needed)
-            const processedUrl = await this.processFaviconUrl(faviconUrl, rssUrl);
-            console.log(`IconUtils: Processed favicon URL: ${processedUrl ? 'success' : 'failed'}`);
-            
-            return processedUrl;
+            return null;
             
         } catch (error) {
             console.error(`IconUtils: Error fetching favicon for ${rssUrl}:`, error.message);
@@ -849,15 +1107,20 @@ class IconUtils {
             // Fallback to standard favicon.ico
             let fallbackDomain = this.extractMainDomain(rssUrl);
             
-            // Special handling for Walla RSS - use www.walla.co.il for fallback too
             if (rssUrl.includes('walla.co.il') && fallbackDomain && fallbackDomain.includes('rss.walla.co.il')) {
                 fallbackDomain = 'https://www.walla.co.il';
             }
             
             if (fallbackDomain) {
                 const fallbackUrl = fallbackDomain + '/favicon.ico';
-                console.log(`IconUtils: Using fallback favicon: ${fallbackUrl}`);
-                return await this.processFaviconUrl(fallbackUrl, rssUrl);
+                const cachedPath = await this.downloadAndCacheIcon(fallbackUrl, rssUrl);
+                if (cachedPath && cachedPath.startsWith(this.tempDir)) {
+                    const dataUrl = this.fileToDataUrl(cachedPath);
+                    if (dataUrl) {
+                        return dataUrl;
+                    }
+                }
+                return fallbackUrl;
             }
             
             return null;
@@ -880,6 +1143,188 @@ class IconUtils {
         
         await Promise.all(promises);
         return results;
+    }
+
+    /**
+     * Convert a file path to a data URL
+     * @param {string} filePath - The file path to convert
+     * @returns {string|null} - The data URL or null if failed
+     */
+    fileToDataUrl(filePath) {
+        try {
+            if (!fs.existsSync(filePath)) {
+                console.log(`IconUtils: Cached file not found: ${filePath}`);
+                return null;
+            }
+            
+            const fileData = fs.readFileSync(filePath);
+            if (!fileData || fileData.length === 0) {
+                console.log(`IconUtils: Cached file is empty: ${filePath}`);
+                return null;
+            }
+            
+            // Validate that it's a valid image file
+            if (!this.isValidImageData(fileData, filePath)) {
+                console.log(`IconUtils: Cached file is not a valid image: ${filePath}`);
+                // Remove the corrupted file
+                try {
+                    fs.unlinkSync(filePath);
+                } catch (e) {
+                    console.error(`IconUtils: Error removing corrupted file: ${e.message}`);
+                }
+                return null;
+            }
+            
+            const base64Data = fileData.toString('base64');
+            const mimeType = this.getMimeType(fileData);
+            const dataUrl = `data:${mimeType};base64,${base64Data}`;
+            
+            console.log(`IconUtils: Successfully converted cached file to data URL: ${filePath}`);
+            return dataUrl;
+            
+        } catch (error) {
+            console.error(`IconUtils: Error converting file to data URL: ${error.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * Get MIME type from file data
+     * @param {Buffer} fileData - The file data
+     * @returns {string} - The MIME type
+     */
+    getMimeType(fileData) {
+        if (fileData.length >= 8) {
+            const pngSignature = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+            const gifSignature = Buffer.from([0x47, 0x49, 0x46, 0x38]);
+            const jpegSignature = Buffer.from([0xFF, 0xD8, 0xFF]);
+            const icoSignature = Buffer.from([0x00, 0x00, 0x01, 0x00]);
+            
+            if (fileData.slice(0, 8).equals(pngSignature)) {
+                return 'image/png';
+            } else if (fileData.slice(0, 4).equals(gifSignature)) {
+                return 'image/gif';
+            } else if (fileData.slice(0, 3).equals(jpegSignature)) {
+                return 'image/jpeg';
+            } else if (fileData.slice(0, 4).equals(icoSignature)) {
+                return 'image/x-icon';
+            }
+        }
+        return 'image/png'; // Default fallback
+    }
+
+    /**
+     * Validate and clean up corrupted cached files
+     */
+    validateAndCleanCache() {
+        try {
+            const files = fs.readdirSync(this.tempDir);
+            let cleanedCount = 0;
+            
+            for (const file of files) {
+                if (file === 'cache_index.json') continue;
+                
+                const filePath = path.join(this.tempDir, file);
+                try {
+                    const fileData = fs.readFileSync(filePath);
+                    
+                    // Check if file is valid image using the same validation logic
+                    if (!this.isValidImageData(fileData, filePath)) {
+                        fs.unlinkSync(filePath);
+                        cleanedCount++;
+                        console.log(`IconUtils: Removed corrupted cached file: ${file}`);
+                    }
+                } catch (error) {
+                    // File is corrupted or unreadable, remove it
+                    try {
+                        fs.unlinkSync(filePath);
+                        cleanedCount++;
+                        console.log(`IconUtils: Removed unreadable cached file: ${file}`);
+                    } catch (e) {
+                        console.error(`IconUtils: Error removing corrupted file: ${e.message}`);
+                    }
+                }
+            }
+            
+            if (cleanedCount > 0) {
+                console.log(`IconUtils: Cleaned up ${cleanedCount} corrupted cached files`);
+                // Reload cache index after cleanup
+                this.loadCacheIndex();
+            }
+        } catch (error) {
+            console.error('IconUtils: Error validating cache:', error.message);
+        }
+    }
+
+    /**
+     * Clear the entire icon cache
+     */
+    clearCache() {
+        try {
+            console.log('IconUtils: Clearing entire icon cache...');
+            
+            // Clear in-memory caches
+            this.cache.clear();
+            this.convertedCache.clear();
+            
+            // Remove all files in temp directory
+            const files = fs.readdirSync(this.tempDir);
+            let removedCount = 0;
+            
+            for (const file of files) {
+                const filePath = path.join(this.tempDir, file);
+                try {
+                    fs.unlinkSync(filePath);
+                    removedCount++;
+                } catch (error) {
+                    console.error(`IconUtils: Error removing file ${file}:`, error.message);
+                }
+            }
+            
+            console.log(`IconUtils: Cleared cache - removed ${removedCount} files`);
+            
+        } catch (error) {
+            console.error('IconUtils: Error clearing cache:', error.message);
+        }
+    }
+
+    /**
+     * Get cache statistics
+     * @returns {Object} - Cache statistics
+     */
+    getCacheStats() {
+        try {
+            const files = fs.readdirSync(this.tempDir);
+            const iconFiles = files.filter(file => file !== 'cache_index.json');
+            
+            let totalSize = 0;
+            for (const file of iconFiles) {
+                const filePath = path.join(this.tempDir, file);
+                try {
+                    const stats = fs.statSync(filePath);
+                    totalSize += stats.size;
+                } catch (error) {
+                    // Ignore errors for individual files
+                }
+            }
+            
+            return {
+                totalFiles: iconFiles.length,
+                totalSize: totalSize,
+                cacheDirectory: this.tempDir,
+                memoryCacheSize: this.cache.size,
+                convertedCacheSize: this.convertedCache.size
+            };
+        } catch (error) {
+            console.error('IconUtils: Error getting cache stats:', error.message);
+            return {
+                totalFiles: 0,
+                totalSize: 0,
+                cacheDirectory: this.tempDir,
+                memoryCacheSize: this.cache.size,
+                convertedCacheSize: this.convertedCache.size
+            };
+        }
     }
 }
 

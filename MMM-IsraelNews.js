@@ -1,34 +1,56 @@
 Module.register("MMM-IsraelNews", {
     defaults: {
-        numLines: 10,
+        numLines: 4,
         scrollSpeed: 200,
         updateInterval: 600,
         newsHoursBack: 4, // Show news from the last 4 hours only
         urls: [
-                "https://www.ynet.co.il/Integration/StoryRss1854.xml",
-                // "https://www.srugim.co.il/feed",
-                // "https://rss.walla.co.il/feed/22",
-                // "https://www.maariv.co.il/Rss/RssFeedsMivzakiChadashot"
+            "https://www.ynet.co.il/Integration/StoryRss1854.xml",
+            {
+                url: "https://www.kan.org.il/newsflash/",
+                type: "html",
+                selector: ".news-item",
+                titleSelector: ".headline",
+                linkSelector: "a"
+            },
+            //     "https://www.inn.co.il/Rss.aspx",
+            // "https://www.srugim.co.il/feed"
+            // You can add more URLs like this:
+            // "https://rss.walla.co.il/feed/22",
+            // Or use the new object format:
+            // {
+            //     url: "https://www.israelhayom.co.il/israelnow",
+            //     type: "html"
+            // }
         ]
     },
 
-    start: function() {
+    start: function () {
         Log.info("Starting module: " + this.name);
         this.newsItems = [];
         this.loaded = false;
-        Log.info("MMM-IsraelNews: Sending GET_NEWS request with URLs: " + this.config.urls.join(", "));
+
+        // Create a safe string representation of URLs for logging
+        const urlStrings = this.config.urls.map(url =>
+            typeof url === 'string' ? url : url.url
+        );
+        Log.info("MMM-IsraelNews: Sending GET_NEWS request with URLs: " + urlStrings.join(", "));
+
+        // Send initial request
         this.sendSocketNotification("GET_NEWS", {
             urls: this.config.urls,
             newsHoursBack: this.config.newsHoursBack
         });
+
+        // Schedule recurring updates
         this.scheduleUpdate();
     },
 
-    getStyles: function() {
+    getStyles: function () {
         return ["MMM-IsraelNews.css"];
     },
 
-    socketNotificationReceived: function(notification, payload) {
+    socketNotificationReceived: function (notification, payload) {
         Log.info("MMM-IsraelNews: Received notification: " + notification);
         if (notification === "NEWS_RESULT") {
             Log.info("MMM-IsraelNews: Received " + payload.length + " news items");
@@ -42,16 +64,16 @@ Module.register("MMM-IsraelNews", {
         }
     },
 
-    scheduleUpdate: function() {
+    scheduleUpdate: function () {
         setInterval(() => {
             this.sendSocketNotification("GET_NEWS", {
                 urls: this.config.urls,
                 newsHoursBack: this.config.newsHoursBack
             });
-        }, this.config.updateInterval);
+        }, this.config.updateInterval * 1000); // Convert seconds to milliseconds
     },
 
-    getDom: function() {
+    getDom: function () {
         console.log("MMM-IsraelNews getDom called, loaded:", this.loaded, "newsItems:", this.newsItems.length);
         const wrapper = document.createElement("div");
         wrapper.className = "MMM-IsraelNews";
@@ -75,27 +97,27 @@ Module.register("MMM-IsraelNews", {
                 console.log("Adding news item", index, item.title);
                 const newsItem = document.createElement("div");
                 newsItem.className = "news-item";
-                
+
                 // Create favicon and timestamp container
                 const iconTimeContainer = document.createElement("div");
                 iconTimeContainer.className = "news-icon-time";
-                
+
                 // Create favicon image element
                 if (item.favicon) {
                     const faviconImg = document.createElement("img");
                     faviconImg.src = item.favicon;
                     faviconImg.className = "news-favicon";
-                    faviconImg.onerror = function() { this.style.display = 'none'; };
+                    faviconImg.onerror = function () { this.style.display = 'none'; };
                     iconTimeContainer.appendChild(faviconImg);
                 }
-                
+
                 // Format the timestamp from pubDate
                 if (item.pubDate) {
                     const date = new Date(item.pubDate);
                     if (!isNaN(date.getTime())) {
-                        const timeStamp = date.toLocaleTimeString('he-IL', { 
-                            hour: '2-digit', 
-                            minute: '2-digit' 
+                        const timeStamp = date.toLocaleTimeString('he-IL', {
+                            hour: '2-digit',
+                            minute: '2-digit'
                         });
                         const timeElement = document.createElement("span");
                         timeElement.className = "news-time";
@@ -103,12 +125,12 @@ Module.register("MMM-IsraelNews", {
                         iconTimeContainer.appendChild(timeElement);
                     }
                 }
-                
+
                 // Create headline container
                 const headlineContainer = document.createElement("div");
                 headlineContainer.className = "news-headline";
                 headlineContainer.textContent = item.title;
-                
+
                 // Add both containers to the news item
                 newsItem.appendChild(iconTimeContainer);
                 newsItem.appendChild(headlineContainer);
@@ -125,7 +147,7 @@ Module.register("MMM-IsraelNews", {
         // Set the CSS variable for max height based on numLines
         wrapper.style.setProperty('--news-lines', this.config.numLines);
         console.log("Set CSS variable --news-lines to:", this.config.numLines);
-        
+
         // Add scrolling if there are more items than visible lines
         if (this.newsItems.length > this.config.numLines) {
             newsContainer.classList.add('scrolling');
