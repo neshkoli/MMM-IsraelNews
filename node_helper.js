@@ -210,6 +210,7 @@ module.exports = NodeHelper.create({
                 Log.info("MMM-IsraelNews: Total items collected: " + allNewsItems.length);
                 
                 // Filter items by publication date (only show items within the specified hours back)
+                const now = new Date();
                 const filteredNewsItems = allNewsItems.filter(item => {
                     if (!item.pubDate) {
                         return true; // Keep items without publication date
@@ -218,10 +219,19 @@ module.exports = NodeHelper.create({
                     if (isNaN(itemDate.getTime())) {
                         return true; // Keep items with invalid dates
                     }
+                    
+                    // Exclude future items (could be timezone issues)
+                    if (itemDate > now) {
+                        console.log("MMM-IsraelNews: Excluding future item: " + item.title.substring(0, 50) + " (date: " + item.pubDate + ")");
+                        return false;
+                    }
+                    
+                    // Only include items within the time window
                     return itemDate >= cutoffTime;
                 });
                 
                 console.log("MMM-IsraelNews: Items after time filtering: " + filteredNewsItems.length + " (from last " + newsHoursBack + " hours)");
+                console.log("MMM-IsraelNews: Time window: " + cutoffTime.toLocaleString() + " to " + now.toLocaleString());
                 Log.info("MMM-IsraelNews: Items after time filtering: " + filteredNewsItems.length + " (from last " + newsHoursBack + " hours)");
                 
                 // Sort by publication date (newest first)

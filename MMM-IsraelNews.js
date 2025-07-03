@@ -152,6 +152,17 @@ Module.register("MMM-IsraelNews", {
                 if (item.pubDate) {
                     const date = new Date(item.pubDate);
                     if (!isNaN(date.getTime())) {
+                        // Check if this is a future date and log it
+                        const now = new Date();
+                        if (date > now) {
+                            console.warn("MMM-IsraelNews: Displaying future news item:", {
+                                title: item.title.substring(0, 50),
+                                pubDate: item.pubDate,
+                                parsedDate: date.toString(),
+                                source: item.source
+                            });
+                        }
+                        
                         const timeStamp = date.toLocaleTimeString('he-IL', {
                             hour: '2-digit',
                             minute: '2-digit'
