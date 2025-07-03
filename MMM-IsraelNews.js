@@ -6,22 +6,19 @@ Module.register("MMM-IsraelNews", {
         newsHoursBack: 4, // Show news from the last 4 hours only
         urls: [
             "https://www.ynet.co.il/Integration/StoryRss1854.xml",
-            {
-                url: "https://www.kan.org.il/newsflash/",
-                type: "html",
-                selector: ".news-item",
-                titleSelector: ".headline",
-                linkSelector: "a"
-            },
-            //     "https://www.inn.co.il/Rss.aspx",
-            // "https://www.srugim.co.il/feed"
+            "https://www.inn.co.il/Rss.aspx",
+            "https://www.srugim.co.il/feed"
             // You can add more URLs like this:
             // "https://rss.walla.co.il/feed/22",
-            // Or use the new object format:
+            // Or use the new HTML scraping format for sites with static content:
             // {
-            //     url: "https://www.israelhayom.co.il/israelnow",
-            //     type: "html"
+            //     url: "https://example-news-site.com/flash/",
+            //     type: "html",
+            //     selector: ".news-item",
+            //     titleSelector: ".headline",
+            //     linkSelector: "a"
             // }
+            // Note: Kan News Flash loads content dynamically and won't work with HTML scraping
         ]
     },
 
@@ -51,9 +48,16 @@ Module.register("MMM-IsraelNews", {
     },
 
     socketNotificationReceived: function (notification, payload) {
-        Log.info("MMM-IsraelNews: Received notification: " + notification);
+        Log.info("MMM-IsraelNews: Received notification: " + notification + " at " + new Date().toLocaleTimeString());
         if (notification === "NEWS_RESULT") {
             Log.info("MMM-IsraelNews: Received " + payload.length + " news items");
+            
+            // Log some details about the received items for debugging
+            if (payload.length > 0) {
+                Log.info("MMM-IsraelNews: First item: " + payload[0].title.substring(0, 50) + "...");
+                Log.info("MMM-IsraelNews: Latest item date: " + payload[0].pubDate);
+            }
+            
             this.newsItems = payload;
             this.loaded = true;
             this.updateDom();
@@ -64,13 +68,46 @@ Module.register("MMM-IsraelNews", {
         }
     },
 
+    // Manual update method for testing
+    updateNews: function () {
+        Log.info("MMM-IsraelNews: Manual news update triggered at " + new Date().toLocaleTimeString());
+        this.sendSocketNotification("GET_NEWS", {
+            urls: this.config.urls,
+            newsHoursBack: this.config.newsHoursBack
+        });
+    },
+
+    stop: function () {
+        Log.info("MMM-IsraelNews: Stopping module and clearing update interval");
+        if (this.updateIntervalId) {
+            clearInterval(this.updateIntervalId);
+            this.updateIntervalId = null;
+        }
+    },
+
     scheduleUpdate: function () {
-        setInterval(() => {
-            this.sendSocketNotification("GET_NEWS", {
-                urls: this.config.urls,
-                newsHoursBack: this.config.newsHoursBack
+        const self = this;
+        
+        // Clear any existing interval first
+        if (this.updateIntervalId) {
+            clearInterval(this.updateIntervalId);
+        }
+        
+        const updateNews = function() {
+            Log.info("MMM-IsraelNews: Scheduled update triggered at " + new Date().toLocaleTimeString());
+            Log.info("MMM-IsraelNews: Update interval is " + self.config.updateInterval + " seconds");
+            self.sendSocketNotification("GET_NEWS", {
+                urls: self.config.urls,
+                newsHoursBack: self.config.newsHoursBack
             });
-        }, this.config.updateInterval * 1000); // Convert seconds to milliseconds
+        };
+        
+        // Set up recurring updates
+        const intervalMs = this.config.updateInterval * 1000; // Convert seconds to milliseconds
+        this.updateIntervalId = setInterval(updateNews, intervalMs);
+        
+        Log.info("MMM-IsraelNews: Scheduled updates every " + this.config.updateInterval + " seconds (" + intervalMs + "ms)");
+        Log.info("MMM-IsraelNews: Next update at " + new Date(Date.now() + intervalMs).toLocaleTimeString());
     },
 
     getDom: function () {

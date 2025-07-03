@@ -251,16 +251,6 @@ module.exports = NodeHelper.create({
             console.log("MMM-IsraelNews: Processing GET_NEWS request");
             Log.info("MMM-IsraelNews: Processing GET_NEWS request");
             this.getNews(payload);
-        } else if (notification === "CLEAR_ICON_CACHE") {
-            console.log("MMM-IsraelNews: Clearing icon cache");
-            Log.info("MMM-IsraelNews: Clearing icon cache");
-            this.iconUtils.clearCache();
-            this.sendSocketNotification("ICON_CACHE_CLEARED", { success: true });
-        } else if (notification === "GET_ICON_CACHE_STATS") {
-            console.log("MMM-IsraelNews: Getting icon cache stats");
-            Log.info("MMM-IsraelNews: Getting icon cache stats");
-            const stats = this.iconUtils.getCacheStats();
-            this.sendSocketNotification("ICON_CACHE_STATS", stats);
         } else {
             console.log("MMM-IsraelNews: Unknown notification: " + notification);
             Log.warn("MMM-IsraelNews: Unknown notification: " + notification);
