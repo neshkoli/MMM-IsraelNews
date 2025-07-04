@@ -32,16 +32,28 @@ class IconUtils {
             if (fs.existsSync(this.cacheIndexFile)) {
                 const indexData = fs.readFileSync(this.cacheIndexFile, 'utf8');
                 const index = JSON.parse(indexData);
+                let validEntries = 0;
+                let orphanedEntries = 0;
                 
-                // Restore cache from disk index
+                // Restore cache from disk index, check if files still exist
                 for (const [url, cacheInfo] of Object.entries(index)) {
                     if (cacheInfo.cachedFile && fs.existsSync(cacheInfo.cachedFile)) {
                         this.cache.set(url, cacheInfo.cachedFile);
                         console.log(`IconUtils: Loaded cached icon from disk: ${url} -> ${cacheInfo.cachedFile}`);
+                        validEntries++;
+                    } else {
+                        console.log(`IconUtils: Orphaned cache entry (file missing): ${url} -> ${cacheInfo.cachedFile}`);
+                        orphanedEntries++;
                     }
                 }
                 
-                console.log(`IconUtils: Loaded ${Object.keys(index).length} cached icons from disk`);
+                console.log(`IconUtils: Loaded ${validEntries} valid cached icons from disk`);
+                
+                // If we found orphaned entries, save a cleaned index
+                if (orphanedEntries > 0) {
+                    console.log(`IconUtils: Cleaning up ${orphanedEntries} orphaned cache entries`);
+                    this.saveCacheIndex();
+                }
             }
         } catch (error) {
             console.error('IconUtils: Error loading cache index:', error.message);
@@ -1166,9 +1178,12 @@ class IconUtils {
             // Validate that it's a valid image file
             if (!this.isValidImageData(fileData, filePath)) {
                 console.log(`IconUtils: Cached file is not a valid image: ${filePath}`);
-                // Remove the corrupted file
+                // Remove the corrupted file and update cache
                 try {
                     fs.unlinkSync(filePath);
+                    // Remove from memory cache and update index
+                    this.removeFromCache(filePath);
+                    console.log(`IconUtils: Removed corrupted file and updated cache: ${filePath}`);
                 } catch (e) {
                     console.error(`IconUtils: Error removing corrupted file: ${e.message}`);
                 }
@@ -1231,6 +1246,7 @@ class IconUtils {
                     // Check if file is valid image using the same validation logic
                     if (!this.isValidImageData(fileData, filePath)) {
                         fs.unlinkSync(filePath);
+                        this.removeFromCache(filePath);
                         cleanedCount++;
                         console.log(`IconUtils: Removed corrupted cached file: ${file}`);
                     }
@@ -1238,6 +1254,7 @@ class IconUtils {
                     // File is corrupted or unreadable, remove it
                     try {
                         fs.unlinkSync(filePath);
+                        this.removeFromCache(filePath);
                         cleanedCount++;
                         console.log(`IconUtils: Removed unreadable cached file: ${file}`);
                     } catch (e) {
@@ -1324,6 +1341,34 @@ class IconUtils {
                 memoryCacheSize: this.cache.size,
                 convertedCacheSize: this.convertedCache.size
             };
+        }
+    }
+
+    /**
+     * Remove a cached file from both memory cache and index
+     * @param {string} filePath - The file path that was removed
+     */
+    removeFromCache(filePath) {
+        try {
+            // Find and remove from memory cache
+            const entriesToRemove = [];
+            for (const [url, cachedFile] of this.cache.entries()) {
+                if (cachedFile === filePath) {
+                    entriesToRemove.push(url);
+                }
+            }
+            
+            for (const url of entriesToRemove) {
+                this.cache.delete(url);
+                console.log(`IconUtils: Removed ${url} from memory cache`);
+            }
+            
+            // Update the cache index
+            if (entriesToRemove.length > 0) {
+                this.saveCacheIndex();
+            }
+        } catch (error) {
+            console.error('IconUtils: Error removing from cache:', error.message);
         }
     }
 }
