@@ -118,3 +118,6 @@ logs
 # Test files
 *.test.js
 test*.js
+
+# docs
+UPDATE*.md

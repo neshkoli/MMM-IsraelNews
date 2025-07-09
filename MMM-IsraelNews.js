@@ -26,6 +26,9 @@ Module.register("MMM-IsraelNews", {
         Log.info("Starting module: " + this.name);
         this.newsItems = [];
         this.loaded = false;
+        
+        // Initialize state management
+        this.initializeState();
 
         // Create a safe string representation of URLs for logging
         const urlStrings = this.config.urls.map(url =>
@@ -33,36 +36,165 @@ Module.register("MMM-IsraelNews", {
         );
         Log.info("MMM-IsraelNews: Sending GET_NEWS request with URLs: " + urlStrings.join(", "));
 
+        // Send initial request and start update cycle
+        this.startUpdateCycle();
+    },
+
+    initializeState: function () {
+        // State management for update intervals
+        this.updateState = {
+            intervalId: null,
+            healthCheckId: null,
+            isScheduling: false,
+            isRequestInProgress: false,
+            lastUpdateTime: null,
+            lastScheduledTime: null,
+            retryCount: 0,
+            maxRetries: 3
+        };
+        
+        Log.info("MMM-IsraelNews: State initialized");
+    },
+
+    startUpdateCycle: function () {
+        Log.info("MMM-IsraelNews: Starting update cycle");
+        
+        // Clear any existing state
+        this.clearAllTimers();
+        
         // Send initial request
+        this.requestNewsUpdate();
+        
+        // Schedule recurring updates
+        this.scheduleUpdates();
+        
+        // Set up health monitoring
+        this.setupHealthMonitoring();
+    },
+
+    clearAllTimers: function () {
+        if (this.updateState.intervalId) {
+            clearInterval(this.updateState.intervalId);
+            this.updateState.intervalId = null;
+        }
+        
+        if (this.updateState.healthCheckId) {
+            clearInterval(this.updateState.healthCheckId);
+            this.updateState.healthCheckId = null;
+        }
+        
+        // Clear legacy timers if they exist
+        if (this.updateIntervalId) {
+            clearInterval(this.updateIntervalId);
+            this.updateIntervalId = null;
+        }
+        
+        if (this.healthCheckInterval) {
+            clearInterval(this.healthCheckInterval);
+            this.healthCheckInterval = null;
+        }
+        
+        Log.info("MMM-IsraelNews: All timers cleared");
+    },
+
+    requestNewsUpdate: function () {
+        if (this.updateState.isRequestInProgress) {
+            Log.info("MMM-IsraelNews: Update request already in progress, skipping");
+            return;
+        }
+        
+        this.updateState.isRequestInProgress = true;
+        
+        Log.info("MMM-IsraelNews: Requesting news update at " + new Date().toLocaleTimeString());
+        
         this.sendSocketNotification("GET_NEWS", {
             urls: this.config.urls,
             newsHoursBack: this.config.newsHoursBack
         });
-
-        // Schedule recurring updates
-        this.scheduleUpdate();
-        
-        // Set up a periodic health check to ensure updates don't stop
-        this.setupHealthCheck();
     },
 
-    setupHealthCheck: function () {
+    scheduleUpdates: function () {
+        // Prevent concurrent scheduling
+        if (this.updateState.isScheduling) {
+            Log.warn("MMM-IsraelNews: Scheduling already in progress, skipping");
+            return;
+        }
+        
+        this.updateState.isScheduling = true;
+        
+        try {
+            // Clear any existing interval
+            if (this.updateState.intervalId) {
+                clearInterval(this.updateState.intervalId);
+                this.updateState.intervalId = null;
+            }
+            
+            // Validate and set interval
+            let intervalSeconds = this.config.updateInterval || 600;
+            if (intervalSeconds < 30) {
+                Log.warn("MMM-IsraelNews: Update interval too short (" + intervalSeconds + "s), using minimum of 30s");
+                intervalSeconds = 30;
+            }
+            
+            const intervalMs = intervalSeconds * 1000;
+            
+            // Set up the recurring update
+            this.updateState.intervalId = setInterval(() => {
+                this.requestNewsUpdate();
+            }, intervalMs);
+            
+            this.updateState.lastScheduledTime = Date.now();
+            
+            Log.info("MMM-IsraelNews: Updates scheduled every " + intervalSeconds + " seconds");
+            Log.info("MMM-IsraelNews: Next update at " + new Date(Date.now() + intervalMs).toLocaleTimeString());
+            
+        } finally {
+            this.updateState.isScheduling = false;
+        }
+    },
+
+    setupHealthMonitoring: function () {
+        // Clear existing health check
+        if (this.updateState.healthCheckId) {
+            clearInterval(this.updateState.healthCheckId);
+        }
+        
         const self = this;
         
-        // Check every 5 minutes if the update mechanism is still working
-        this.healthCheckInterval = setInterval(function() {
+        // Health check every 5 minutes
+        this.updateState.healthCheckId = setInterval(function() {
             const now = Date.now();
-            const timeSinceLastScheduled = now - (self.lastScheduledTime || 0);
-            const expectedInterval = self.scheduledInterval || (self.config.updateInterval * 1000);
+            const timeSinceLastUpdate = now - (self.updateState.lastUpdateTime || 0);
+            const expectedInterval = (self.config.updateInterval || 600) * 1000;
             
-            // If more than 2 intervals have passed without updates, restart
-            if (timeSinceLastScheduled > expectedInterval * 2) {
-                Log.warn("MMM-IsraelNews: Health check failed - updates may have stopped. Restarting update cycle.");
-                self.scheduleUpdate();
+            // If no update received for more than 2 intervals, something is wrong
+            if (timeSinceLastUpdate > expectedInterval * 2.5) {
+                Log.warn("MMM-IsraelNews: Health check failed - no updates received for " + 
+                    Math.round(timeSinceLastUpdate / 1000) + " seconds");
+                self.handleHealthCheckFailure();
             } else {
-                Log.info("MMM-IsraelNews: Health check passed - updates are running normally");
+                Log.info("MMM-IsraelNews: Health check passed - last update " + 
+                    Math.round(timeSinceLastUpdate / 1000) + " seconds ago");
             }
-        }, 5 * 60 * 1000); // Check every 5 minutes
+        }, 5 * 60 * 1000);
+        
+        Log.info("MMM-IsraelNews: Health monitoring enabled");
+    },
+
+    handleHealthCheckFailure: function () {
+        this.updateState.retryCount++;
+        
+        if (this.updateState.retryCount > this.updateState.maxRetries) {
+            Log.error("MMM-IsraelNews: Max retries reached, stopping health monitoring");
+            return;
+        }
+        
+        Log.warn("MMM-IsraelNews: Attempting to restart update cycle (attempt " + 
+            this.updateState.retryCount + "/" + this.updateState.maxRetries + ")");
+        
+        // Reset request state and restart
+        this.updateState.isRequestInProgress = false;
+        this.startUpdateCycle();
     },
 
     getStyles: function () {
@@ -71,8 +203,14 @@ Module.register("MMM-IsraelNews", {
 
     socketNotificationReceived: function (notification, payload) {
         Log.info("MMM-IsraelNews: Received notification: " + notification + " at " + new Date().toLocaleTimeString());
+        
         if (notification === "NEWS_RESULT") {
             Log.info("MMM-IsraelNews: Received " + payload.length + " news items");
+            
+            // Update state
+            this.updateState.isRequestInProgress = false;
+            this.updateState.lastUpdateTime = Date.now();
+            this.updateState.retryCount = 0; // Reset retry count on success
             
             // Log some details about the received items for debugging
             if (payload.length > 0) {
@@ -83,8 +221,14 @@ Module.register("MMM-IsraelNews", {
             this.newsItems = payload;
             this.loaded = true;
             this.updateDom();
+            
         } else if (notification === "NEWS_ERROR") {
             Log.error("MMM-IsraelNews: Error fetching news", payload);
+            
+            // Update state
+            this.updateState.isRequestInProgress = false;
+            
+            // Don't update lastUpdateTime on error to trigger health check if needed
             this.loaded = true;
             this.updateDom();
         }
@@ -93,116 +237,55 @@ Module.register("MMM-IsraelNews", {
     // Manual update method for testing
     updateNews: function () {
         Log.info("MMM-IsraelNews: Manual news update triggered at " + new Date().toLocaleTimeString());
-        this.sendSocketNotification("GET_NEWS", {
-            urls: this.config.urls,
-            newsHoursBack: this.config.newsHoursBack
-        });
+        this.requestNewsUpdate();
     },
 
     stop: function () {
-        Log.info("MMM-IsraelNews: Stopping module and clearing all intervals");
-        if (this.updateIntervalId) {
-            clearInterval(this.updateIntervalId);
-            this.updateIntervalId = null;
-        }
-        if (this.healthCheckInterval) {
-            clearInterval(this.healthCheckInterval);
-            this.healthCheckInterval = null;
+        Log.info("MMM-IsraelNews: Stopping module and clearing all timers");
+        this.clearAllTimers();
+        
+        // Reset state
+        if (this.updateState) {
+            this.updateState.isRequestInProgress = false;
+            this.updateState.retryCount = 0;
         }
     },
 
     suspend: function () {
-        Log.info("MMM-IsraelNews: Module suspended, clearing all intervals");
-        if (this.updateIntervalId) {
-            clearInterval(this.updateIntervalId);
-            this.updateIntervalId = null;
-        }
-        if (this.healthCheckInterval) {
-            clearInterval(this.healthCheckInterval);
-            this.healthCheckInterval = null;
+        Log.info("MMM-IsraelNews: Module suspended, clearing all timers");
+        this.clearAllTimers();
+        
+        // Reset state
+        if (this.updateState) {
+            this.updateState.isRequestInProgress = false;
         }
     },
 
     resume: function () {
         Log.info("MMM-IsraelNews: Module resumed, restarting update cycle");
-        // Restart the update cycle
-        this.scheduleUpdate();
-        // Restart health check
-        this.setupHealthCheck();
-        // Trigger an immediate update
-        this.sendSocketNotification("GET_NEWS", {
-            urls: this.config.urls,
-            newsHoursBack: this.config.newsHoursBack
-        });
+        
+        // Wait a moment to ensure any concurrent operations complete
+        setTimeout(() => {
+            this.startUpdateCycle();
+        }, 100);
     },
 
     notificationReceived: function (notification, payload, sender) {
         if (notification === "DOM_OBJECTS_CREATED") {
             // This is called when MagicMirror is fully loaded
-            Log.info("MMM-IsraelNews: DOM objects created, ensuring update cycle is running");
-            if (!this.updateIntervalId) {
-                this.scheduleUpdate();
+            Log.info("MMM-IsraelNews: DOM objects created");
+            
+            // Only restart if we don't have an active update cycle
+            if (!this.updateState || !this.updateState.intervalId) {
+                Log.info("MMM-IsraelNews: No active update cycle, starting one");
+                setTimeout(() => {
+                    this.startUpdateCycle();
+                }, 200);
             }
         } else if (notification === "MODULE_DOM_CREATED") {
             // This is called when the module's DOM is created
             Log.info("MMM-IsraelNews: Module DOM created");
         }
-    },
-
-    scheduleUpdate: function () {
-        const self = this;
-        
-        // Clear any existing interval first
-        if (this.updateIntervalId) {
-            Log.info("MMM-IsraelNews: Clearing existing update interval");
-            clearInterval(this.updateIntervalId);
-            this.updateIntervalId = null;
-        }
-        
-        const updateNews = function() {
-            Log.info("MMM-IsraelNews: Scheduled update triggered at " + new Date().toLocaleTimeString());
-            Log.info("MMM-IsraelNews: Update interval is " + self.config.updateInterval + " seconds");
-            
-            // Double-check that the interval is still valid
-            if (!self.updateIntervalId) {
-                Log.warn("MMM-IsraelNews: Update interval was lost, rescheduling");
-                self.scheduleUpdate();
-                return;
-            }
-            
-            self.sendSocketNotification("GET_NEWS", {
-                urls: self.config.urls,
-                newsHoursBack: self.config.newsHoursBack
-            });
-        };
-        
-        // Validate updateInterval configuration
-        let intervalSeconds = this.config.updateInterval || 600; // Default to 10 minutes if not set
-        if (intervalSeconds < 30) {
-            Log.warn("MMM-IsraelNews: Update interval too short (" + intervalSeconds + "s), using minimum of 30s");
-            intervalSeconds = 30;
-        }
-        
-        // Set up recurring updates
-        const intervalMs = intervalSeconds * 1000; // Convert seconds to milliseconds
-        this.updateIntervalId = setInterval(updateNews, intervalMs);
-        
-        Log.info("MMM-IsraelNews: Scheduled updates every " + intervalSeconds + " seconds (" + intervalMs + "ms)");
-        Log.info("MMM-IsraelNews: Next update at " + new Date(Date.now() + intervalMs).toLocaleTimeString());
-        
-        // Store a reference to validate the interval is still running
-        this.lastScheduledTime = Date.now();
-        this.scheduledInterval = intervalMs;
-        
-        // Set up a heartbeat check to ensure the interval doesn't get lost
-        setTimeout(() => {
-            if (this.updateIntervalId) {
-                Log.info("MMM-IsraelNews: Update interval heartbeat - still running");
-            } else {
-                Log.warn("MMM-IsraelNews: Update interval lost, rescheduling");
-                this.scheduleUpdate();
-            }
-        }, intervalMs + 5000); // Check 5 seconds after the first scheduled update
     },
 
     getDom: function () {
@@ -301,5 +384,29 @@ Module.register("MMM-IsraelNews", {
         }
 
         return wrapper;
+    },
+
+    // Debug method to check update status
+    getUpdateStatus: function () {
+        if (!this.updateState) {
+            return "Update state not initialized";
+        }
+        
+        const now = Date.now();
+        const status = {
+            intervalActive: !!this.updateState.intervalId,
+            healthCheckActive: !!this.updateState.healthCheckId,
+            isScheduling: this.updateState.isScheduling,
+            isRequestInProgress: this.updateState.isRequestInProgress,
+            lastUpdateTime: this.updateState.lastUpdateTime ? 
+                new Date(this.updateState.lastUpdateTime).toLocaleTimeString() : 'Never',
+            timeSinceLastUpdate: this.updateState.lastUpdateTime ? 
+                Math.round((now - this.updateState.lastUpdateTime) / 1000) + 's' : 'N/A',
+            retryCount: this.updateState.retryCount,
+            configInterval: this.config.updateInterval + 's'
+        };
+        
+        Log.info("MMM-IsraelNews: Update Status", status);
+        return status;
     }
 });
