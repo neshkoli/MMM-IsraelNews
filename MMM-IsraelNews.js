@@ -2,7 +2,7 @@ Module.register("MMM-IsraelNews", {
     defaults: {
         numLines: 4,
         scrollSpeed: 200,
-        updateInterval: 600,
+        updateInterval: 300, // 5 minutes (300 seconds)
         newsHoursBack: 1, // Show news from the last 1 hour only
         urls: [
             "https://www.ynet.co.il/Integration/StoryRss1854.xml",
@@ -43,12 +43,9 @@ Module.register("MMM-IsraelNews", {
     initializeState: function () {
         // State management for update intervals
         this.updateState = {
-            intervalId: null,
             healthCheckId: null,
-            isScheduling: false,
             isRequestInProgress: false,
             lastUpdateTime: null,
-            lastScheduledTime: null,
             retryCount: 0,
             maxRetries: 3
         };
@@ -62,22 +59,14 @@ Module.register("MMM-IsraelNews", {
         // Clear any existing state
         this.clearAllTimers();
         
-        // Send initial request
+        // Send initial request - backend will handle scheduling
         this.requestNewsUpdate();
-        
-        // Schedule recurring updates
-        this.scheduleUpdates();
         
         // Set up health monitoring
         this.setupHealthMonitoring();
     },
 
     clearAllTimers: function () {
-        if (this.updateState.intervalId) {
-            clearInterval(this.updateState.intervalId);
-            this.updateState.intervalId = null;
-        }
-        
         if (this.updateState.healthCheckId) {
             clearInterval(this.updateState.healthCheckId);
             this.updateState.healthCheckId = null;
@@ -113,45 +102,7 @@ Module.register("MMM-IsraelNews", {
         });
     },
 
-    scheduleUpdates: function () {
-        // Prevent concurrent scheduling
-        if (this.updateState.isScheduling) {
-            Log.warn("MMM-IsraelNews: Scheduling already in progress, skipping");
-            return;
-        }
-        
-        this.updateState.isScheduling = true;
-        
-        try {
-            // Clear any existing interval
-            if (this.updateState.intervalId) {
-                clearInterval(this.updateState.intervalId);
-                this.updateState.intervalId = null;
-            }
-            
-            // Validate and set interval
-            let intervalSeconds = this.config.updateInterval || 600;
-            if (intervalSeconds < 30) {
-                Log.warn("MMM-IsraelNews: Update interval too short (" + intervalSeconds + "s), using minimum of 30s");
-                intervalSeconds = 30;
-            }
-            
-            const intervalMs = intervalSeconds * 1000;
-            
-            // Set up the recurring update
-            this.updateState.intervalId = setInterval(() => {
-                this.requestNewsUpdate();
-            }, intervalMs);
-            
-            this.updateState.lastScheduledTime = Date.now();
-            
-            Log.info("MMM-IsraelNews: Updates scheduled every " + intervalSeconds + " seconds");
-            Log.info("MMM-IsraelNews: Next update at " + new Date(Date.now() + intervalMs).toLocaleTimeString());
-            
-        } finally {
-            this.updateState.isScheduling = false;
-        }
-    },
+    // Removed scheduleUpdates method - backend now handles scheduling
 
     setupHealthMonitoring: function () {
         // Clear existing health check
@@ -165,7 +116,7 @@ Module.register("MMM-IsraelNews", {
         this.updateState.healthCheckId = setInterval(function() {
             const now = Date.now();
             const timeSinceLastUpdate = now - (self.updateState.lastUpdateTime || 0);
-            const expectedInterval = (self.config.updateInterval || 600) * 1000;
+            const expectedInterval = (self.config.updateInterval || 300) * 1000;
             
             // If no update received for more than 2 intervals, something is wrong
             if (timeSinceLastUpdate > expectedInterval * 2.5) {
@@ -194,7 +145,7 @@ Module.register("MMM-IsraelNews", {
         
         // Reset request state and restart
         this.updateState.isRequestInProgress = false;
-        this.startUpdateCycle();
+        this.requestNewsUpdate(); // Just request a new update, backend will handle scheduling
     },
 
     getStyles: function () {
@@ -244,6 +195,9 @@ Module.register("MMM-IsraelNews", {
         Log.info("MMM-IsraelNews: Stopping module and clearing all timers");
         this.clearAllTimers();
         
+        // Tell backend to stop reloading
+        this.sendSocketNotification("STOP_NEWS");
+        
         // Reset state
         if (this.updateState) {
             this.updateState.isRequestInProgress = false;
@@ -254,6 +208,9 @@ Module.register("MMM-IsraelNews", {
     suspend: function () {
         Log.info("MMM-IsraelNews: Module suspended, clearing all timers");
         this.clearAllTimers();
+        
+        // Tell backend to stop reloading
+        this.sendSocketNotification("STOP_NEWS");
         
         // Reset state
         if (this.updateState) {
@@ -394,16 +351,15 @@ Module.register("MMM-IsraelNews", {
         
         const now = Date.now();
         const status = {
-            intervalActive: !!this.updateState.intervalId,
             healthCheckActive: !!this.updateState.healthCheckId,
-            isScheduling: this.updateState.isScheduling,
             isRequestInProgress: this.updateState.isRequestInProgress,
             lastUpdateTime: this.updateState.lastUpdateTime ? 
                 new Date(this.updateState.lastUpdateTime).toLocaleTimeString() : 'Never',
             timeSinceLastUpdate: this.updateState.lastUpdateTime ? 
                 Math.round((now - this.updateState.lastUpdateTime) / 1000) + 's' : 'N/A',
             retryCount: this.updateState.retryCount,
-            configInterval: this.config.updateInterval + 's'
+            configInterval: this.config.updateInterval + 's',
+            note: "Backend handles scheduling"
         };
         
         Log.info("MMM-IsraelNews: Update Status", status);

@@ -42,7 +42,7 @@ Add the module to your `config/config.js` file:
     config: {
         numLines: 10,
         scrollSpeed: 200,
-        updateInterval: 600,
+        updateInterval: 300,
         newsHoursBack: 4,
         urls: [
             "https://www.ynet.co.il/Integration/StoryRss1854.xml",
@@ -96,7 +96,7 @@ Add the module to your `config/config.js` file:
 |--------|---------|-------------|
 | `numLines` | `10` | Number of news lines to display at once |
 | `scrollSpeed` | `200` | Speed of scrolling animation (milliseconds per item) |
-| `updateInterval` | `600` | Update interval in seconds (600 = 10 minutes) |
+| `updateInterval` | `300` | Update interval in seconds (300 = 5 minutes) |
 | `newsHoursBack` | `4` | Show news from the last X hours only |
 | `urls` | `[]` | Array of news source URLs (supports mixed format) |
 

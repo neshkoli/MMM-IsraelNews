@@ -8,7 +8,7 @@
         // Display settings
         numLines: 12,           // Number of news lines to show at once
         scrollSpeed: 180,       // Animation speed (milliseconds per item)
-        updateInterval: 600,    // Update every 10 minutes (600 seconds)
+        updateInterval: 300,    // Update every 5 minutes (300 seconds)
         newsHoursBack: 4,       // Show news from the last 4 hours only
         
         // News sources (mixed RSS and HTML)

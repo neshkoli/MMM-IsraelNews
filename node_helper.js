@@ -14,6 +14,10 @@ module.exports = NodeHelper.create({
         // Initialize IconUtils
         this.iconUtils = new IconUtils();
         
+        // Initialize reload timer
+        this.reloadTimer = null;
+        this.currentConfig = null;
+        
         // Create a custom HTTPS agent that allows self-signed certificates
         // This is needed for Electron mode which has stricter SSL validation
         const httpsAgent = new https.Agent({
@@ -37,6 +41,37 @@ module.exports = NodeHelper.create({
         
         console.log("MMM-IsraelNews: Node helper started and RSS parser initialized with SSL workaround");
         Log.info("MMM-IsraelNews: Node helper started and RSS parser initialized with SSL workaround");
+    },
+
+    // Schedule the next reload
+    scheduleReload: function() {
+        if (this.reloadTimer) {
+            clearTimeout(this.reloadTimer);
+        }
+        
+        if (!this.currentConfig) {
+            Log.warn("MMM-IsraelNews: No config available for scheduling reload");
+            return;
+        }
+        
+        const updateInterval = this.currentConfig.updateInterval || 300; // Default 5 minutes
+        const intervalMs = updateInterval * 1000;
+        
+        Log.info("MMM-IsraelNews: Scheduling next reload in " + updateInterval + " seconds");
+        
+        this.reloadTimer = setTimeout(() => {
+            Log.info("MMM-IsraelNews: Auto-reload triggered");
+            this.getNews(this.currentConfig);
+        }, intervalMs);
+    },
+
+    // Stop the reload timer
+    stopReload: function() {
+        if (this.reloadTimer) {
+            clearTimeout(this.reloadTimer);
+            this.reloadTimer = null;
+            Log.info("MMM-IsraelNews: Reload timer stopped");
+        }
     },
 
     scrapeHtmlNews: function(sourceConfig) {
@@ -246,11 +281,17 @@ module.exports = NodeHelper.create({
                 console.log("MMM-IsraelNews: Sending NEWS_RESULT with " + filteredNewsItems.length + " sorted items (newest first)");
                 Log.info("MMM-IsraelNews: Sending NEWS_RESULT with " + filteredNewsItems.length + " sorted items (newest first)");
                 self.sendSocketNotification("NEWS_RESULT", filteredNewsItems);
+                
+                // Schedule the next reload after successful fetch
+                self.scheduleReload();
             })
             .catch(err => {
                 console.error("MMM-IsraelNews: Error processing sources: ", err.message);
                 Log.error("MMM-IsraelNews: Error processing sources: ", err.message);
                 self.sendSocketNotification("NEWS_ERROR", err.message);
+                
+                // Schedule the next reload even on error to keep trying
+                self.scheduleReload();
             });
     },
 
@@ -260,7 +301,13 @@ module.exports = NodeHelper.create({
         if (notification === "GET_NEWS") {
             console.log("MMM-IsraelNews: Processing GET_NEWS request");
             Log.info("MMM-IsraelNews: Processing GET_NEWS request");
+            this.currentConfig = payload; // Store the config for scheduling
             this.getNews(payload);
+            this.scheduleReload(); // Schedule the next reload
+        } else if (notification === "STOP_NEWS") {
+            console.log("MMM-IsraelNews: Received STOP_NEWS notification. Stopping reload timer.");
+            Log.info("MMM-IsraelNews: Received STOP_NEWS notification. Stopping reload timer.");
+            this.stopReload();
         } else {
             console.log("MMM-IsraelNews: Unknown notification: " + notification);
             Log.warn("MMM-IsraelNews: Unknown notification: " + notification);
