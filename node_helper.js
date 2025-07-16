@@ -237,7 +237,7 @@ module.exports = NodeHelper.create({
                 // Wait for all feeds to complete
                 return Promise.all(fetchPromises);
             })
-            .then(feedsResults => {
+            .then(async feedsResults => {
                 // Flatten all results into a single array
                 const allNewsItems = feedsResults.flat();
                 
@@ -281,7 +281,26 @@ module.exports = NodeHelper.create({
                 console.log("MMM-IsraelNews: Sending NEWS_RESULT with " + filteredNewsItems.length + " sorted items (newest first)");
                 Log.info("MMM-IsraelNews: Sending NEWS_RESULT with " + filteredNewsItems.length + " sorted items (newest first)");
                 self.sendSocketNotification("NEWS_RESULT", filteredNewsItems);
-                
+
+                // --- ICON RE-FETCH LOGIC START ---
+                // After sending news, check for missing favicons and re-fetch if needed
+                const missingIcons = [];
+                for (const url of urlsForFavicon) {
+                    const cached = self.iconUtils.getCachedIconPath(url);
+                    if (!cached) {
+                        missingIcons.push(url);
+                    }
+                }
+                if (missingIcons.length > 0) {
+                    console.log(`MMM-IsraelNews: Missing favicons for ${missingIcons.length} sources, re-fetching...`, missingIcons);
+                    // Fetch missing icons in parallel
+                    await Promise.all(missingIcons.map(url => self.iconUtils.getFaviconUrl(url)));
+                    console.log("MMM-IsraelNews: Favicon re-fetch complete.");
+                } else {
+                    console.log("MMM-IsraelNews: All favicons present in temp_icons/. No re-fetch needed.");
+                }
+                // --- ICON RE-FETCH LOGIC END ---
+
                 // Schedule the next reload after successful fetch
                 self.scheduleReload();
             })
