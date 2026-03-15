@@ -8,7 +8,6 @@ const cheerio = require("cheerio");
 
 module.exports = NodeHelper.create({
     start: function() {
-        console.log("Starting node helper for: MMM-IsraelNews");
         Log.info("MMM-IsraelNews: Node helper starting...");
         
         // Initialize IconUtils
@@ -39,7 +38,6 @@ module.exports = NodeHelper.create({
             }
         });
         
-        console.log("MMM-IsraelNews: Node helper started and RSS parser initialized with SSL workaround");
         Log.info("MMM-IsraelNews: Node helper started and RSS parser initialized with SSL workaround");
     },
 
@@ -82,7 +80,7 @@ module.exports = NodeHelper.create({
         const linkSelector = sourceConfig.linkSelector;
         const dateSelector = sourceConfig.dateSelector;
         
-        console.log("MMM-IsraelNews: Scraping HTML from: " + url + " with selector: " + selector);
+        Log.info("MMM-IsraelNews: Scraping HTML from: " + url);
         
         return axios.get(url, {
             timeout: 10000,
@@ -149,17 +147,12 @@ module.exports = NodeHelper.create({
             });
             
             if (items.length === 0) {
-                console.warn("MMM-IsraelNews: No items found with selector '" + selector + "' from " + url);
-                console.warn("MMM-IsraelNews: This may indicate that the content is loaded dynamically via JavaScript.");
-                console.warn("MMM-IsraelNews: Consider using an RSS feed instead, or checking if the site provides an API.");
-            } else {
-                console.log("MMM-IsraelNews: Successfully scraped " + items.length + " items from " + url);
+                Log.warn("MMM-IsraelNews: No items found with selector '" + selector + "' from " + url + " (content may be loaded dynamically)");
             }
             
             return items;
         })
         .catch(err => {
-            console.error("MMM-IsraelNews: Error scraping HTML from " + url + ": ", err.message);
             Log.error("MMM-IsraelNews: Error scraping HTML from " + url + ": ", err.message);
             return []; // Return empty array for failed sources
         });
@@ -175,8 +168,6 @@ module.exports = NodeHelper.create({
         // Handle both single URL (backward compatibility) and array of URLs
         const urlArray = Array.isArray(urls) ? urls : [urls];
         
-        console.log("MMM-IsraelNews: Fetching news from " + urlArray.length + " sources");
-        console.log("MMM-IsraelNews: Filtering news from last " + newsHoursBack + " hours");
         Log.info("MMM-IsraelNews: Fetching news from " + urlArray.length + " sources");
         Log.info("MMM-IsraelNews: Filtering news from last " + newsHoursBack + " hours");
         
@@ -192,42 +183,31 @@ module.exports = NodeHelper.create({
         // First, get favicon URLs for all sources
         this.iconUtils.getFaviconUrls(urlsForFavicon)
             .then(faviconMap => {
-                console.log("MMM-IsraelNews: Favicon URLs retrieved");
-                
                 // Create promises for all sources (RSS and HTML)
                 const fetchPromises = urlArray.map(sourceConfig => {
                     const url = typeof sourceConfig === 'string' ? sourceConfig : sourceConfig.url;
                     const sourceType = typeof sourceConfig === 'object' ? sourceConfig.type : 'rss';
                     const faviconUrl = faviconMap.get(url);
                     
-                    console.log("MMM-IsraelNews: Fetching from: " + url + " (type: " + sourceType + ")");
-                    
                     if (sourceType === 'html') {
                         // Handle HTML scraping
                         return this.scrapeHtmlNews(sourceConfig)
-                            .then(items => {
-                                console.log("MMM-IsraelNews: Successfully scraped " + items.length + " items from " + url);
-                                return items.map(item => ({
+                            .then(items => items.map(item => ({
                                     ...item,
                                     favicon: faviconUrl
-                                }));
-                            });
+                                })));
                     } else {
                         // Handle RSS feeds (default)
                         return this.parser.parseURL(url)
-                            .then(feed => {
-                                console.log("MMM-IsraelNews: Successfully fetched " + feed.items.length + " items from " + url);
-                                return feed.items.map(item => ({
+                            .then(feed => feed.items.map(item => ({
                                     title: item.title || "No title",
                                     link: item.link || "",
                                     pubDate: item.pubDate || "",
                                     description: item.description || "",
                                     source: url,
                                     favicon: faviconUrl
-                                }));
-                            })
+                                })))
                             .catch(err => {
-                                console.error("MMM-IsraelNews: Error fetching RSS from " + url + ": ", err.message);
                                 Log.error("MMM-IsraelNews: Error fetching RSS from " + url + ": ", err.message);
                                 return []; // Return empty array for failed sources
                             });
@@ -240,8 +220,6 @@ module.exports = NodeHelper.create({
             .then(async feedsResults => {
                 // Flatten all results into a single array
                 const allNewsItems = feedsResults.flat();
-                
-                console.log("MMM-IsraelNews: Total items collected: " + allNewsItems.length);
                 Log.info("MMM-IsraelNews: Total items collected: " + allNewsItems.length);
                 
                 // Filter items by publication date (only show items within the specified hours back)
@@ -257,7 +235,7 @@ module.exports = NodeHelper.create({
                     
                     // Exclude future items (could be timezone issues)
                     if (itemDate > now) {
-                        console.log("MMM-IsraelNews: Excluding future item: " + item.title.substring(0, 50) + " (date: " + item.pubDate + ")");
+                        Log.info("MMM-IsraelNews: Excluding future-dated item from " + item.source);
                         return false;
                     }
                     
@@ -265,8 +243,6 @@ module.exports = NodeHelper.create({
                     return itemDate >= cutoffTime;
                 });
                 
-                console.log("MMM-IsraelNews: Items after time filtering: " + filteredNewsItems.length + " (from last " + newsHoursBack + " hours)");
-                console.log("MMM-IsraelNews: Time window: " + cutoffTime.toLocaleString() + " to " + now.toLocaleString());
                 Log.info("MMM-IsraelNews: Items after time filtering: " + filteredNewsItems.length + " (from last " + newsHoursBack + " hours)");
                 
                 // Sort by publication date (newest first)
@@ -278,34 +254,20 @@ module.exports = NodeHelper.create({
                     return dateB - dateA; // Descending order (newest first)
                 });
                 
-                console.log("MMM-IsraelNews: Sending NEWS_RESULT with " + filteredNewsItems.length + " sorted items (newest first)");
-                Log.info("MMM-IsraelNews: Sending NEWS_RESULT with " + filteredNewsItems.length + " sorted items (newest first)");
+                Log.info("MMM-IsraelNews: Sending " + filteredNewsItems.length + " news items");
                 self.sendSocketNotification("NEWS_RESULT", filteredNewsItems);
 
-                // --- ICON RE-FETCH LOGIC START ---
-                // After sending news, check for missing favicons and re-fetch if needed
-                const missingIcons = [];
-                for (const url of urlsForFavicon) {
-                    const cached = self.iconUtils.getCachedIconPath(url);
-                    if (!cached) {
-                        missingIcons.push(url);
-                    }
-                }
+                // Re-fetch missing favicons for non-bundled sources (bundled icons are in icons/)
+                const missingIcons = urlsForFavicon.filter(url => !self.iconUtils.getBuiltinIcon(url) && !self.iconUtils.getCachedIconPath(url));
                 if (missingIcons.length > 0) {
-                    console.log(`MMM-IsraelNews: Missing favicons for ${missingIcons.length} sources, re-fetching...`, missingIcons);
-                    // Fetch missing icons in parallel
+                    Log.info(`MMM-IsraelNews: Re-fetching favicons for ${missingIcons.length} custom sources`);
                     await Promise.all(missingIcons.map(url => self.iconUtils.getFaviconUrl(url)));
-                    console.log("MMM-IsraelNews: Favicon re-fetch complete.");
-                } else {
-                    console.log("MMM-IsraelNews: All favicons present in temp_icons/. No re-fetch needed.");
                 }
-                // --- ICON RE-FETCH LOGIC END ---
 
                 // Schedule the next reload after successful fetch
                 self.scheduleReload();
             })
             .catch(err => {
-                console.error("MMM-IsraelNews: Error processing sources: ", err.message);
                 Log.error("MMM-IsraelNews: Error processing sources: ", err.message);
                 self.sendSocketNotification("NEWS_ERROR", err.message);
                 
@@ -315,20 +277,16 @@ module.exports = NodeHelper.create({
     },
 
     socketNotificationReceived: function(notification, payload) {
-        console.log("MMM-IsraelNews: Received notification: " + notification);
         Log.info("MMM-IsraelNews: Received notification: " + notification);
         if (notification === "GET_NEWS") {
-            console.log("MMM-IsraelNews: Processing GET_NEWS request");
             Log.info("MMM-IsraelNews: Processing GET_NEWS request");
             this.currentConfig = payload; // Store the config for scheduling
             this.getNews(payload);
-            this.scheduleReload(); // Schedule the next reload
+            // scheduleReload is called at end of getNews() - do NOT call here (would double-schedule)
         } else if (notification === "STOP_NEWS") {
-            console.log("MMM-IsraelNews: Received STOP_NEWS notification. Stopping reload timer.");
             Log.info("MMM-IsraelNews: Received STOP_NEWS notification. Stopping reload timer.");
             this.stopReload();
         } else {
-            console.log("MMM-IsraelNews: Unknown notification: " + notification);
             Log.warn("MMM-IsraelNews: Unknown notification: " + notification);
         }
     }

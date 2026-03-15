@@ -246,7 +246,6 @@ Module.register("MMM-IsraelNews", {
     },
 
     getDom: function () {
-        console.log("MMM-IsraelNews getDom called, loaded:", this.loaded, "newsItems:", this.newsItems.length);
         const wrapper = document.createElement("div");
         wrapper.className = "MMM-IsraelNews";
 
@@ -265,8 +264,7 @@ Module.register("MMM-IsraelNews", {
 
         // Create news items and duplicate them for seamless loop
         const createNewsItems = () => {
-            this.newsItems.forEach((item, index) => {
-                console.log("Adding news item", index, item.title);
+            this.newsItems.forEach((item) => {
                 const newsItem = document.createElement("div");
                 newsItem.className = "news-item";
 
@@ -279,7 +277,8 @@ Module.register("MMM-IsraelNews", {
                     const faviconImg = document.createElement("img");
                     faviconImg.src = item.favicon;
                     faviconImg.className = "news-favicon";
-                    faviconImg.onerror = function () { this.style.display = 'none'; };
+                    faviconImg.alt = item.source || "";
+                    faviconImg.onerror = function () { this.style.visibility = "hidden"; this.style.width = "0"; this.style.margin = "0"; };
                     iconTimeContainer.appendChild(faviconImg);
                 }
 
@@ -290,12 +289,7 @@ Module.register("MMM-IsraelNews", {
                         // Check if this is a future date and log it
                         const now = new Date();
                         if (date > now) {
-                            console.warn("MMM-IsraelNews: Displaying future news item:", {
-                                title: item.title.substring(0, 50),
-                                pubDate: item.pubDate,
-                                parsedDate: date.toString(),
-                                source: item.source
-                            });
+                            Log.warn("MMM-IsraelNews: Displaying future news item from " + item.source);
                         }
                         
                         const timeStamp = date.toLocaleTimeString('he-IL', {
@@ -327,17 +321,12 @@ Module.register("MMM-IsraelNews", {
 
         wrapper.appendChild(newsContainer);
 
-        // Set the CSS variable for max height based on numLines
         wrapper.style.setProperty('--news-lines', this.config.numLines);
-        console.log("Set CSS variable --news-lines to:", this.config.numLines);
 
-        // Add scrolling if there are more items than visible lines
         if (this.newsItems.length > this.config.numLines) {
             newsContainer.classList.add('scrolling');
-            // Calculate animation duration based on number of items and scroll speed
             const animationDuration = (this.newsItems.length * this.config.scrollSpeed) / 100;
             newsContainer.style.animationDuration = animationDuration + 's';
-            console.log("Added scrolling animation with duration:", animationDuration + 's');
         }
 
         return wrapper;

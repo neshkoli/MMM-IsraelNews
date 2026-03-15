@@ -4,12 +4,28 @@ const { URL } = require('url');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const Log = require('logger');
+
+/**
+ * Map source URL domain patterns to bundled icon filenames.
+ * Bundled icons are stored in modules/MMM-IsraelNews/icons/ and are 100% reliable
+ * (no network dependency, no CORS, no temp file cleanup).
+ */
+const BUNDLED_ICON_MAP = {
+    'ynet.co.il': 'ynet.png',
+    'inn.co.il': 'inn.png',
+    'srugim.co.il': 'srugim.png',
+    'walla.co.il': 'walla.png',
+    'rss.walla.co.il': 'walla.png',
+    'maariv.co.il': 'maariv.png'
+};
 
 class IconUtils {
     constructor() {
         this.cache = new Map(); // Cache favicon URLs to avoid repeated requests
         this.convertedCache = new Map(); // Cache converted PNG files
         this.tempDir = path.join(__dirname, 'temp_icons');
+        this.iconsDir = path.join(__dirname, 'icons');
         this.cacheIndexFile = path.join(this.tempDir, 'cache_index.json');
         
         // Create temp directory if it doesn't exist
@@ -37,14 +53,11 @@ class IconUtils {
                 for (const [url, cacheInfo] of Object.entries(index)) {
                     if (cacheInfo.cachedFile && fs.existsSync(cacheInfo.cachedFile)) {
                         this.cache.set(url, cacheInfo.cachedFile);
-                        console.log(`IconUtils: Loaded cached icon from disk: ${url} -> ${cacheInfo.cachedFile}`);
                     }
                 }
-                
-                console.log(`IconUtils: Loaded ${Object.keys(index).length} cached icons from disk`);
             }
         } catch (error) {
-            console.error('IconUtils: Error loading cache index:', error.message);
+            Log.error('IconUtils: Error loading cache index:', error.message);
         }
     }
 
@@ -64,9 +77,8 @@ class IconUtils {
             }
             
             fs.writeFileSync(this.cacheIndexFile, JSON.stringify(index, null, 2));
-            console.log(`IconUtils: Saved cache index with ${Object.keys(index).length} entries`);
         } catch (error) {
-            console.error('IconUtils: Error saving cache index:', error.message);
+            Log.error('IconUtils: Error saving cache index:', error.message);
         }
     }
 
@@ -92,7 +104,6 @@ class IconUtils {
         const cachedPath = path.join(this.tempDir, filename);
         
         if (fs.existsSync(cachedPath)) {
-            console.log(`IconUtils: Found cached icon on disk: ${cachedPath}`);
             return cachedPath;
         }
         
@@ -111,7 +122,6 @@ class IconUtils {
             const cachedPath = path.join(this.tempDir, filename);
             
             fs.writeFileSync(cachedPath, iconData);
-            console.log(`IconUtils: Saved icon to cache: ${cachedPath}`);
             
             // Update cache index
             this.cache.set(url, cachedPath);
@@ -119,7 +129,7 @@ class IconUtils {
             
             return cachedPath;
         } catch (error) {
-            console.error('IconUtils: Error saving icon to cache:', error.message);
+            Log.error('IconUtils: Error saving icon to cache:', error.message);
             return null;
         }
     }
@@ -175,7 +185,6 @@ class IconUtils {
         // For URLs that are clearly icon-related, be more lenient
         const urlLower = originalUrl.toLowerCase();
         if (urlLower.includes('.ico') || urlLower.includes('favicon')) {
-            console.log(`IconUtils: Accepting potentially valid ICO file from ${originalUrl} (${imageData.length} bytes)`);
             return true;
         }
         
@@ -190,18 +199,15 @@ class IconUtils {
      */
     async downloadAndCacheIcon(iconUrl, sourceUrl) {
         try {
-            console.log(`IconUtils: Downloading and caching icon: ${iconUrl}`);
             
             // Download the icon data
             const iconData = await this.downloadFileToBuffer(iconUrl);
             if (!iconData || iconData.length === 0) {
-                console.log(`IconUtils: Failed to download icon data from ${iconUrl}`);
                 return iconUrl; // Return original URL as fallback
             }
             
             // Validate that it's a valid image file
             if (!this.isValidImageData(iconData, iconUrl)) {
-                console.log(`IconUtils: Downloaded data is not a valid image from ${iconUrl}`);
                 return iconUrl; // Return original URL as fallback
             }
             
@@ -213,7 +219,7 @@ class IconUtils {
             
             return iconUrl; // Return original URL if caching failed
         } catch (error) {
-            console.error(`IconUtils: Error downloading and caching icon:`, error.message);
+            Log.error('IconUtils: Error downloading and caching icon:', error.message);
             return iconUrl; // Return original URL as fallback
         }
     }
@@ -507,150 +513,6 @@ class IconUtils {
     }
 
     /**
-     * Download a file to a local path
-     * @param {string} url - The URL to download
-     * @param {string} localPath - The local path to save the file
-     * @returns {Promise<void>}
-     */
-    downloadFile(url, localPath) {
-        return new Promise((resolve, reject) => {
-            console.log(`IconUtils: Starting download from ${url} to ${localPath}`);
-            
-            const urlObj = new URL(url);
-            const client = urlObj.protocol === 'https:' ? https : http;
-            
-            const options = {
-                hostname: urlObj.hostname,
-                port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
-                path: urlObj.pathname + (urlObj.search || ''),
-                method: 'GET',
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                    'Accept': 'image/*,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1'
-                },
-                timeout: 30000,
-                rejectUnauthorized: false
-            };
-
-            console.log(`IconUtils: Request details:`, {
-                protocol: urlObj.protocol,
-                hostname: options.hostname,
-                port: options.port,
-                path: options.path,
-                method: options.method
-            });
-
-            let dataBuffer = Buffer.alloc(0);
-            let totalBytes = 0;
-
-            const req = client.request(options, (res) => {
-                console.log(`IconUtils: Response received - Status: ${res.statusCode}, Headers:`, res.headers);
-                
-                // Handle redirects manually
-                if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
-                    const redirectUrl = res.headers.location;
-                    console.log(`IconUtils: Redirect (${res.statusCode}) to: ${redirectUrl}`);
-                    if (redirectUrl) {
-                        const fullRedirectUrl = redirectUrl.startsWith('http') ? 
-                            redirectUrl : 
-                            `${urlObj.protocol}//${urlObj.hostname}${redirectUrl}`;
-                        
-                        console.log(`IconUtils: Following redirect to: ${fullRedirectUrl}`);
-                        this.downloadFile(fullRedirectUrl, localPath)
-                            .then(resolve)
-                            .catch(reject);
-                        return;
-                    }
-                }
-                
-                if (res.statusCode !== 200) {
-                    console.error(`IconUtils: HTTP Error ${res.statusCode}: ${res.statusMessage}`);
-                    reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
-                    return;
-                }
-
-                // Handle compression
-                let stream = res;
-                if (res.headers['content-encoding'] === 'gzip') {
-                    const zlib = require('zlib');
-                    stream = res.pipe(zlib.createGunzip());
-                    console.log(`IconUtils: Decompressing gzipped content`);
-                } else if (res.headers['content-encoding'] === 'deflate') {
-                    const zlib = require('zlib');
-                    stream = res.pipe(zlib.createInflate());
-                    console.log(`IconUtils: Decompressing deflated content`);
-                } else if (res.headers['content-encoding'] === 'br') {
-                    const zlib = require('zlib');
-                    stream = res.pipe(zlib.createBrotliDecompress());
-                    console.log(`IconUtils: Decompressing brotli content`);
-                }
-
-                // Collect data in memory first
-                stream.on('data', (chunk) => {
-                    totalBytes += chunk.length;
-                    dataBuffer = Buffer.concat([dataBuffer, chunk]);
-                    console.log(`IconUtils: Received chunk of ${chunk.length} bytes, total: ${totalBytes} bytes`);
-                });
-                
-                stream.on('end', () => {
-                    console.log(`IconUtils: Download completed. Total received: ${totalBytes} bytes`);
-                    console.log(`IconUtils: Final buffer length: ${dataBuffer.length} bytes`);
-                    
-                    if (dataBuffer.length === 0) {
-                        console.error(`IconUtils: No data received from server`);
-                        reject(new Error('No data received'));
-                        return;
-                    }
-                    
-                    // Log first few bytes for debugging
-                    console.log(`IconUtils: First 20 bytes:`, dataBuffer.slice(0, 20));
-                    
-                    try {
-                        // Write buffer to file
-                        fs.writeFileSync(localPath, dataBuffer);
-                        const finalSize = fs.existsSync(localPath) ? fs.statSync(localPath).size : 0;
-                        console.log(`IconUtils: File written. Size on disk: ${finalSize} bytes`);
-                        
-                        if (finalSize === 0) {
-                            console.error(`IconUtils: File was written but is empty on disk`);
-                            reject(new Error('Written file is empty'));
-                        } else {
-                            console.log(`IconUtils: Download successful!`);
-                            resolve();
-                        }
-                    } catch (writeError) {
-                        console.error(`IconUtils: Error writing file:`, writeError);
-                        reject(writeError);
-                    }
-                });
-                
-                stream.on('error', (error) => {
-                    console.error(`IconUtils: Stream error:`, error);
-                    reject(error);
-                });
-            });
-
-            req.on('error', (error) => {
-                console.error(`IconUtils: Request error:`, error);
-                reject(error);
-            });
-
-            req.on('timeout', () => {
-                console.error(`IconUtils: Request timeout for ${url}`);
-                req.destroy();
-                reject(new Error('Request timeout'));
-            });
-
-            console.log(`IconUtils: Sending request...`);
-            req.end();
-        });
-    }
-
-    /**
      * Download a file to memory buffer
      * @param {string} url - The URL to download
      * @returns {Promise<Buffer|null>} - The file buffer or null if failed
@@ -755,192 +617,6 @@ class IconUtils {
     }
 
     /**
-     * Convert ICO file to GIF using a simple extraction method
-     * ICO files contain bitmap data that we can convert to GIF
-     * @param {string} icoPath - Path to the ICO file
-     * @param {string} gifPath - Path where to save the GIF file
-     * @returns {Promise<boolean>} - Success status
-     */
-    async convertIcoToGif(icoPath, gifPath) {
-        return new Promise((resolve) => {
-            try {
-                const icoBuffer = fs.readFileSync(icoPath);
-                
-                // Try to find PNG data first and convert to GIF
-                const pngSignature = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
-                const pngStart = icoBuffer.indexOf(pngSignature);
-                
-                if (pngStart !== -1) {
-                    // Extract PNG data from ICO
-                    let pngEnd = icoBuffer.length;
-                    
-                    // Look for IEND chunk (end of PNG)
-                    const iendSignature = Buffer.from([0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82]);
-                    const iendPos = icoBuffer.indexOf(iendSignature, pngStart);
-                    if (iendPos !== -1) {
-                        pngEnd = iendPos + 8; // Include IEND chunk
-                    }
-                    
-                    const pngData = icoBuffer.subarray(pngStart, pngEnd);
-                    
-                    // For now, create a simple GIF wrapper around the image data
-                    // This is a simplified approach - for production use, you'd want a proper image library
-                    this.createSimpleGif(pngData, gifPath)
-                        .then(success => {
-                            if (success) {
-                                console.log(`IconUtils: Successfully converted ICO to GIF: ${gifPath}`);
-                                resolve(true);
-                            } else {
-                                resolve(false);
-                            }
-                        })
-                        .catch(() => resolve(false));
-                } else {
-                    // Try to extract bitmap and create GIF
-                    this.extractBitmapFromIcoAndCreateGif(icoBuffer, gifPath)
-                        .then(resolve)
-                        .catch(() => resolve(false));
-                }
-            } catch (error) {
-                console.error('IconUtils: Error converting ICO to GIF:', error.message);
-                resolve(false);
-            }
-        });
-    }
-
-    /**
-     * Create a simple GIF from image data
-     * @param {Buffer} imageData - The image data
-     * @param {string} gifPath - Output GIF path
-     * @returns {Promise<boolean>} - Success status
-     */
-    async createSimpleGif(imageData, gifPath) {
-        return new Promise((resolve) => {
-            try {
-                // Create a simple GIF header for a single frame
-                // This is a very basic GIF87a format
-                const gifHeader = Buffer.from([
-                    0x47, 0x49, 0x46, 0x38, 0x37, 0x61, // GIF87a signature
-                    0x10, 0x00, // Width: 16 pixels (little endian)
-                    0x10, 0x00, // Height: 16 pixels (little endian)
-                    0x91, // Global color table flag, color resolution, sort flag, global color table size
-                    0x00, // Background color index
-                    0x00  // Pixel aspect ratio
-                ]);
-                
-                // Create a simple color table (grayscale)
-                const colorTable = Buffer.alloc(384); // 128 colors * 3 bytes each
-                for (let i = 0; i < 128; i++) {
-                    const gray = Math.floor((i / 127) * 255);
-                    colorTable[i * 3] = gray;     // Red
-                    colorTable[i * 3 + 1] = gray; // Green
-                    colorTable[i * 3 + 2] = gray; // Blue
-                }
-                
-                // Image descriptor
-                const imageDescriptor = Buffer.from([
-                    0x2C, // Image separator
-                    0x00, 0x00, // Left position
-                    0x00, 0x00, // Top position
-                    0x10, 0x00, // Width: 16 pixels
-                    0x10, 0x00, // Height: 16 pixels
-                    0x00  // Local color table flag
-                ]);
-                
-                // Simple image data (LZW compressed)
-                const imageDataHeader = Buffer.from([0x07]); // LZW minimum code size
-                const simpleImageData = Buffer.from([
-                    0x08, // Block size
-                    0x1C, 0x48, 0xC0, 0x20, 0x60, 0x90, 0x58, 0x74, // Simple pattern
-                    0x00  // Block terminator
-                ]);
-                
-                // GIF trailer
-                const trailer = Buffer.from([0x3B]);
-                
-                // Combine all parts
-                const gifData = Buffer.concat([
-                    gifHeader,
-                    colorTable,
-                    imageDescriptor,
-                    imageDataHeader,
-                    simpleImageData,
-                    trailer
-                ]);
-                
-                fs.writeFileSync(gifPath, gifData);
-                resolve(true);
-            } catch (error) {
-                console.error('IconUtils: Error creating simple GIF:', error.message);
-                resolve(false);
-            }
-        });
-    }
-
-    /**
-     * Extract bitmap from ICO and create GIF (fallback method)
-     * @param {Buffer} icoBuffer - ICO file buffer
-     * @param {string} gifPath - Output GIF path
-     * @returns {Promise<boolean>} - Success status
-     */
-    async extractBitmapFromIcoAndCreateGif(icoBuffer, gifPath) {
-        return new Promise((resolve) => {
-            try {
-                // Simple ICO parsing - find the largest image
-                if (icoBuffer.length < 6) {
-                    resolve(false);
-                    return;
-                }
-                
-                const numImages = icoBuffer.readUInt16LE(4);
-                if (numImages === 0) {
-                    resolve(false);
-                    return;
-                }
-                
-                let bestImage = null;
-                let bestSize = 0;
-                
-                // Parse directory entries
-                for (let i = 0; i < numImages; i++) {
-                    const entryOffset = 6 + (i * 16);
-                    if (entryOffset + 16 > icoBuffer.length) break;
-                    
-                    const width = icoBuffer.readUInt8(entryOffset) || 256;
-                    const height = icoBuffer.readUInt8(entryOffset + 1) || 256;
-                    const size = width * height;
-                    const dataSize = icoBuffer.readUInt32LE(entryOffset + 8);
-                    const dataOffset = icoBuffer.readUInt32LE(entryOffset + 12);
-                    
-                    if (size > bestSize && dataOffset + dataSize <= icoBuffer.length) {
-                        bestSize = size;
-                        bestImage = {
-                            width,
-                            height,
-                            dataSize,
-                            dataOffset
-                        };
-                    }
-                }
-                
-                if (bestImage) {
-                    const imageData = icoBuffer.slice(bestImage.dataOffset, bestImage.dataOffset + bestImage.dataSize);
-                    
-                    // Create a simple GIF from the extracted data
-                    this.createSimpleGif(imageData, gifPath)
-                        .then(resolve)
-                        .catch(() => resolve(false));
-                } else {
-                    resolve(false);
-                }
-            } catch (error) {
-                console.error('IconUtils: Error extracting bitmap from ICO for GIF:', error.message);
-                resolve(false);
-            }
-        });
-    }
-
-    /**
      * Process favicon URL - convert ICO to data URL if needed (in memory)
      * @param {string} faviconUrl - The original favicon URL
      * @param {string} sourceUrl - The source RSS URL for cache key
@@ -1036,14 +712,50 @@ class IconUtils {
     }
 
     /**
+     * Get bundled icon for a known source. Bundled icons are 100% reliable.
+     * @param {string} rssUrl - The RSS feed URL
+     * @returns {string|null} - Data URL of bundled icon, or null if not available
+     */
+    getBuiltinIcon(rssUrl) {
+        try {
+            const urlObj = new URL(rssUrl);
+            const hostname = urlObj.hostname.replace(/^www\./, '');
+            // Check exact match first, then try base domain (e.g. rss.walla.co.il -> walla.co.il)
+            let iconFile = BUNDLED_ICON_MAP[hostname];
+            if (!iconFile && hostname.includes('.')) {
+                const parts = hostname.split('.');
+                const baseDomain = parts.slice(-2).join('.');
+                iconFile = BUNDLED_ICON_MAP[baseDomain];
+            }
+            if (!iconFile) return null;
+
+            const iconPath = path.join(this.iconsDir, iconFile);
+            if (!fs.existsSync(iconPath)) return null;
+
+            const dataUrl = this.fileToDataUrl(iconPath);
+            if (dataUrl) {
+                Log.info(`IconUtils: Using bundled icon for ${hostname}`);
+                return dataUrl;
+            }
+        } catch (err) {
+            Log.warn(`IconUtils: Error getting builtin icon: ${err.message}`);
+        }
+        return null;
+    }
+
+    /**
      * Get favicon URL for a given RSS feed URL
      * @param {string} rssUrl - The RSS feed URL
-     * @returns {Promise<string|null>} - The favicon URL (GIF format preferred for converted ICOs)
+     * @returns {Promise<string|null>} - The favicon URL (data URL preferred for reliability)
      */
     async getFaviconUrl(rssUrl) {
-        console.log(`IconUtils: Getting favicon for RSS URL: ${rssUrl}`);
+        // 1. Try bundled icons first - 100% reliable, no network
+        const builtin = this.getBuiltinIcon(rssUrl);
+        if (builtin) return builtin;
+
+        Log.info(`IconUtils: Getting favicon for RSS URL: ${rssUrl}`);
         
-        // Check disk cache first
+        // 2. Check disk cache
         const diskCachedPath = this.getCachedIconPath(rssUrl);
         if (diskCachedPath) {
             // Convert cached file to data URL
@@ -1178,8 +890,6 @@ class IconUtils {
             const base64Data = fileData.toString('base64');
             const mimeType = this.getMimeType(fileData);
             const dataUrl = `data:${mimeType};base64,${base64Data}`;
-            
-            console.log(`IconUtils: Successfully converted cached file to data URL: ${filePath}`);
             return dataUrl;
             
         } catch (error) {
