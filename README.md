@@ -9,7 +9,7 @@ A MagicMirror module for displaying news headlines from Israeli news sources in 
 - **Robust XML Parsing**: Handles malformed RSS feeds with automatic XML cleanup
 - **Favicon Display**: Shows source favicons next to news items
 - **Time Filtering**: Filter news by publication time (e.g., last 4 hours)
-- **Scrolling Display**: Smooth scrolling animation for multiple news items
+- **Scrolling Display**: Smooth vertical scroll via `requestAnimationFrame` + `scrollTop` (no CSS `transform` animation), which avoids extra compositor layers and is more stable on Raspberry Pi with GPU acceleration enabled
 - **Hebrew Support**: Optimized for Hebrew text display
 
 ## Installation

@@ -66,6 +66,93 @@ Module.register("MMM-IsraelNews", {
         this.setupHealthMonitoring();
     },
 
+    /**
+     * Stop JS smooth scroll (requestAnimationFrame). Call before DOM rebuild or suspend.
+     */
+    stopSmoothScroll: function () {
+        if (this._scrollRafId != null) {
+            cancelAnimationFrame(this._scrollRafId);
+            this._scrollRafId = null;
+        }
+        if (this._scrollStartTimeout != null) {
+            clearTimeout(this._scrollStartTimeout);
+            this._scrollStartTimeout = null;
+        }
+        if (this._scrollResizeObserver) {
+            this._scrollResizeObserver.disconnect();
+            this._scrollResizeObserver = null;
+        }
+    },
+
+    /**
+     * Infinite vertical scroll using scrollTop only (no CSS transform animation).
+     * Better on Raspberry Pi when GPU compositing is flaky.
+     */
+    _runSmoothScroll: function (viewport, container) {
+        const self = this;
+        let loopHeight = 0;
+        const measureLoop = () => {
+            const h = container.scrollHeight;
+            if (h < 2) return 0;
+            return h / 2;
+        };
+
+        const syncLoopHeight = () => {
+            loopHeight = measureLoop();
+        };
+        syncLoopHeight();
+
+        if (typeof ResizeObserver !== "undefined") {
+            if (this._scrollResizeObserver) {
+                this._scrollResizeObserver.disconnect();
+            }
+            this._scrollResizeObserver = new ResizeObserver(() => {
+                syncLoopHeight();
+            });
+            this._scrollResizeObserver.observe(container);
+        }
+
+        const durationSec = (this.newsItems.length * this.config.scrollSpeed) / 100;
+        if (durationSec <= 0) return;
+
+        let lastTs = null;
+        const step = (ts) => {
+            if (!viewport.isConnected) {
+                self._scrollRafId = null;
+                return;
+            }
+
+            if (typeof ResizeObserver === "undefined") {
+                syncLoopHeight();
+            }
+
+            if (loopHeight <= 0) {
+                self._scrollRafId = requestAnimationFrame(step);
+                return;
+            }
+
+            if (viewport.clientHeight <= 0) {
+                self._scrollRafId = requestAnimationFrame(step);
+                return;
+            }
+
+            if (lastTs == null) lastTs = ts;
+            const dt = Math.min(ts - lastTs, 100);
+            lastTs = ts;
+
+            const pxPerMs = loopHeight / (durationSec * 1000);
+            let next = viewport.scrollTop + pxPerMs * dt;
+            while (next >= loopHeight) next -= loopHeight;
+            if (next < 0) next = 0;
+
+            viewport.scrollTop = next;
+
+            self._scrollRafId = requestAnimationFrame(step);
+        };
+
+        this._scrollRafId = requestAnimationFrame(step);
+    },
+
     clearAllTimers: function () {
         if (this.updateState.healthCheckId) {
             clearInterval(this.updateState.healthCheckId);
@@ -193,6 +280,7 @@ Module.register("MMM-IsraelNews", {
 
     stop: function () {
         Log.info("MMM-IsraelNews: Stopping module and clearing all timers");
+        this.stopSmoothScroll();
         this.clearAllTimers();
         
         // Tell backend to stop reloading
@@ -207,6 +295,7 @@ Module.register("MMM-IsraelNews", {
 
     suspend: function () {
         Log.info("MMM-IsraelNews: Module suspended, clearing all timers");
+        this.stopSmoothScroll();
         this.clearAllTimers();
         
         // Tell backend to stop reloading
@@ -224,6 +313,12 @@ Module.register("MMM-IsraelNews", {
         // Wait a moment to ensure any concurrent operations complete
         setTimeout(() => {
             this.startUpdateCycle();
+            // Restart JS scroll (suspend stops rAF; CSS animation did not need this)
+            if (this._scrollViewport && this._scrollContainer &&
+                this._scrollViewport.isConnected && this._scrollContainer.isConnected) {
+                this.stopSmoothScroll();
+                this._runSmoothScroll(this._scrollViewport, this._scrollContainer);
+            }
         }, 100);
     },
 
@@ -246,6 +341,10 @@ Module.register("MMM-IsraelNews", {
     },
 
     getDom: function () {
+        this.stopSmoothScroll();
+        this._scrollViewport = null;
+        this._scrollContainer = null;
+
         const wrapper = document.createElement("div");
         wrapper.className = "MMM-IsraelNews";
 
@@ -319,14 +418,26 @@ Module.register("MMM-IsraelNews", {
         createNewsItems();
         createNewsItems();
 
-        wrapper.appendChild(newsContainer);
-
         wrapper.style.setProperty('--news-lines', this.config.numLines);
 
         if (this.newsItems.length > this.config.numLines) {
-            newsContainer.classList.add('scrolling');
-            const animationDuration = (this.newsItems.length * this.config.scrollSpeed) / 100;
-            newsContainer.style.animationDuration = animationDuration + 's';
+            const viewport = document.createElement("div");
+            viewport.className = "news-scroll-viewport";
+            viewport.appendChild(newsContainer);
+            wrapper.appendChild(viewport);
+
+            this._scrollViewport = viewport;
+            this._scrollContainer = newsContainer;
+
+            const self = this;
+            this._scrollStartTimeout = setTimeout(() => {
+                self._scrollStartTimeout = null;
+                self._runSmoothScroll(viewport, newsContainer);
+            }, 0);
+        } else {
+            this._scrollViewport = null;
+            this._scrollContainer = null;
+            wrapper.appendChild(newsContainer);
         }
 
         return wrapper;

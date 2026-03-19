@@ -9,26 +9,28 @@
   font-size: 1.1em; /* Double the font size */
   box-sizing: border-box; /* Include padding in width calculation */
   padding: 0 8px; /* Add horizontal padding to prevent cutoff */
-  font-family: "Roboto", "Helvetica", sans-serif; /* Explicit font fallback for Pi */
+  font-family: "Roboto", "Helvetica", sans-serif; /* Explicit font fallback on Pi */
 }
 
-@keyframes scroll {
-  0% {
-    transform: translateY(0%);
-  }
-  100% {
-    transform: translateY(-50%);
-  }
+/* Viewport for JS scroll (scrollTop only — no transform animation / compositor layer on content) */
+.MMM-IsraelNews .news-scroll-viewport {
+  overflow: hidden;
+  /* Fixed window height so scrollTop can move content (matches previous clip region) */
+  height: 33vh;
+  max-height: 33vh;
+  width: 100%;
+  box-sizing: border-box;
+  /* Avoid transform animation / extra compositor layers on Pi + GPU */
+  transform: none;
+  will-change: auto;
 }
 
 .MMM-IsraelNews .news-container {
   position: relative;
   display: flex;
   flex-direction: column;
-}
-
-.MMM-IsraelNews .news-container.scrolling {
-  animation: scroll linear infinite;
+  transform: none;
+  will-change: auto;
 }
 
 .MMM-IsraelNews .news-item {
