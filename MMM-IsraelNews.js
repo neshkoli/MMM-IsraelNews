@@ -119,7 +119,9 @@ Module.register("MMM-IsraelNews", {
         const durationSec = (this.newsItems.length * this.config.scrollSpeed) / 100;
         if (durationSec <= 0) return;
 
-        let lastTs = null;
+        // Absolute timestamp position — frame-rate independent, no dt drift.
+        let startTs = null;
+        const durationMs = durationSec * 1000;
         const step = (ts) => {
             if (!viewport.isConnected) {
                 self._scrollRafId = null;
@@ -140,16 +142,8 @@ Module.register("MMM-IsraelNews", {
                 return;
             }
 
-            if (lastTs == null) lastTs = ts;
-            const dt = Math.min(ts - lastTs, 100);
-            lastTs = ts;
-
-            const pxPerMs = loopHeight / (durationSec * 1000);
-            let next = viewport.scrollTop + pxPerMs * dt;
-            while (next >= loopHeight) next -= loopHeight;
-            if (next < 0) next = 0;
-
-            viewport.scrollTop = next;
+            if (startTs == null) startTs = ts;
+            viewport.scrollTop = ((ts - startTs) / durationMs * loopHeight) % loopHeight;
 
             self._scrollRafId = requestAnimationFrame(step);
         };
