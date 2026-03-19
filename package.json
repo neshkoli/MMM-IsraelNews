@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "rss-parser": "^3.10.1",
-    "cheerio": "^1.0.0-rc.12",
+    "cheerio": "1.0.0-rc.12",
     "axios": "^1.6.0"
   },
   "keywords": [
