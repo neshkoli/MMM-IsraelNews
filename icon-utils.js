@@ -17,7 +17,8 @@ const BUNDLED_ICON_MAP = {
     'srugim.co.il': 'srugim.png',
     'walla.co.il': 'walla.png',
     'rss.walla.co.il': 'walla.png',
-    'maariv.co.il': 'maariv.png'
+    'maariv.co.il': 'maariv.png',
+    'israelhayom.co.il': 'israelhayom.png'
 };
 
 class IconUtils {

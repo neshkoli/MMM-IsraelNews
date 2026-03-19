@@ -11,6 +11,7 @@ These icons are used by MMM-IsraelNews for reliable display of news source logos
 | srugim.co.il | srugim.png |
 | walla.co.il, rss.walla.co.il | walla.png |
 | maariv.co.il | maariv.png |
+| israelhayom.co.il | israelhayom.png |
 
 ## Adding a New Source
 
