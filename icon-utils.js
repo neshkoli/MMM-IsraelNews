@@ -18,7 +18,11 @@ const BUNDLED_ICON_MAP = {
     'walla.co.il': 'walla.png',
     'rss.walla.co.il': 'walla.png',
     'maariv.co.il': 'maariv.png',
-    'israelhayom.co.il': 'israelhayom.png'
+    'israelhayom.co.il': 'israelhayom.png',
+    // KAN 11 logo — Wikimedia Commons (PD textlogo): https://commons.wikimedia.org/wiki/File:KAN_11.png
+    'kan.org.il': 'kan.png',
+    // i24NEWS logo — Wikimedia Commons: https://commons.wikimedia.org/wiki/File:LOGO_i24NEWS.png
+    'i24news.tv': 'i24.png'
 };
 
 class IconUtils {

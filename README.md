@@ -82,13 +82,42 @@ Add the module to your `config/config.js` file:
             {
                 url: "https://www.maariv.co.il/Rss/RssFeedsMivzakiChadashot",
                 type: "rss"
+            },
+
+            // כאן 11 מבזקים — loaded in the browser via Umbraco; use this type (not HTML scrape)
+            {
+                type: "kan-newsflash",
+                url: "https://www.kan.org.il/newsflash",
+                timeZone: "Asia/Jerusalem"
+            },
+
+            {
+                type: "i24-news",
+                url: "https://www.i24news.tv/he/news"
             }
         ]
     }
 }
 ```
-```
-```
+
+## כאן (Kan) newsflash
+
+The [מבזקים](https://www.kan.org.il/newsflash) page renders an empty shell in the initial HTML and fills the list with a request to `/umbraco/surface/NewsFlashSurface/GetNews`. The module reproduces that flow: it reads `data-page-id` from the page, calls the same endpoint with `timeZone` and `currentPageId`, then parses `.f-news__item` rows (time, headline, optional `a.card-link`).
+
+Use browser-like HTTP headers for `kan.org.il`; very minimal `User-Agent` strings may receive HTTP 403.
+
+**`newsHoursBack` and מבזקים:** כאן rows use the headline date and time on the page (parsed in `timeZone`, default `Asia/Jerusalem`), so they follow the same **`newsHoursBack`** window as RSS and i24. If you want to show all rows returned by the site (today / אתמול) regardless of `newsHoursBack`, set **`kanIgnoreNewsHoursBack: true`** on that source object.
+
+## i24NEWS (עדכונים)
+
+The Hebrew updates page ([i24news.tv/he/news](https://www.i24news.tv/he/news)) is backed by a public JSON list: `GET https://api.i24news.tv/v2/{locale}/news` (e.g. `he` for Hebrew). The module uses that API; `startedAt` becomes `pubDate`, and when an item has a full article, `content.frontendUrl` is used as the link.
+
+Optional fields on the source object:
+
+| Field | Description |
+|--------|-------------|
+| `locale` | `he`, `en`, `fr`, or `ar` — inferred from `url` if omitted |
+| `apiBaseUrl` | Default `https://api.i24news.tv` |
 
 ## Configuration Options
 
