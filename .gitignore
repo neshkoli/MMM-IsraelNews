@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+package-lock.json
 
 # Dynamically cached favicons (bundled icons in icons/ are preferred)
 temp_icons/

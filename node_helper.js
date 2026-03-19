@@ -22,9 +22,6 @@ function browserLikeAxiosConfig() {
     };
 }
 
-/**
- * ISO timestamp for a KAN row: wall clock in Israel (not the Node process timezone — Pis are often UTC).
- */
 /** Locale segment for https://api.i24news.tv/v2/{locale}/news */
 function inferI24Locale(pageUrl) {
     if (!pageUrl || typeof pageUrl !== "string") {
@@ -46,6 +43,7 @@ function sourceUrlForFavicon(sourceConfig) {
     return sourceConfig.url;
 }
 
+/** ISO timestamp for a KAN row in `zone` (default Asia/Jerusalem), not the process local TZ. */
 function parseKanFlashPubDate(dateToken, timeText, zone) {
     const z = zone || "Asia/Jerusalem";
     if (!dateToken || !timeText) {
@@ -69,6 +67,10 @@ function parseKanFlashPubDate(dateToken, timeText, zone) {
         { zone: z }
     );
     return dt.isValid ? dt.toISO() : DateTime.now().setZone(z).toISO();
+}
+
+function withFavicon(items, faviconUrl) {
+    return items.map((item) => ({ ...item, favicon: faviconUrl }));
 }
 
 module.exports = NodeHelper.create({
@@ -138,7 +140,6 @@ module.exports = NodeHelper.create({
     },
 
     scrapeHtmlNews: function(sourceConfig) {
-        const self = this;
         const url = sourceConfig.url;
         const selector = sourceConfig.selector || '.flashes-item';
         const titleSelector = sourceConfig.titleSelector || selector;
@@ -387,43 +388,34 @@ module.exports = NodeHelper.create({
                     const sourceType = typeof sourceConfig === 'object' ? sourceConfig.type : 'rss';
                     const faviconUrl = faviconMap.get(faviconKey);
                     
-                    if (sourceType === 'html') {
-                        // Handle HTML scraping
-                        return this.scrapeHtmlNews(sourceConfig)
-                            .then(items => items.map(item => ({
-                                    ...item,
-                                    favicon: faviconUrl
-                                })));
-                    } else if (sourceType === 'kan-newsflash') {
-                        return this.fetchKanNewsflash(sourceConfig).then((items) =>
-                            items.map((item) => ({
-                                ...item,
-                                favicon: faviconUrl
-                            }))
-                        );
-                    } else if (sourceType === 'i24-news') {
-                        return this.fetchI24News(sourceConfig).then((items) =>
-                            items.map((item) => ({
-                                ...item,
-                                favicon: faviconUrl
-                            }))
-                        );
-                    } else {
-                        // Handle RSS feeds (default)
-                        return this.parser.parseURL(feedUrl)
-                            .then(feed => feed.items.map(item => ({
+                    if (sourceType === "html") {
+                        return this.scrapeHtmlNews(sourceConfig).then((items) => withFavicon(items, faviconUrl));
+                    }
+                    if (sourceType === "kan-newsflash") {
+                        return this.fetchKanNewsflash(sourceConfig).then((items) => withFavicon(items, faviconUrl));
+                    }
+                    if (sourceType === "i24-news") {
+                        return this.fetchI24News(sourceConfig).then((items) => withFavicon(items, faviconUrl));
+                    }
+                    // RSS (default)
+                    return this.parser
+                        .parseURL(feedUrl)
+                        .then((feed) =>
+                            withFavicon(
+                                feed.items.map((item) => ({
                                     title: item.title || "No title",
                                     link: item.link || "",
                                     pubDate: item.pubDate || "",
                                     description: item.description || "",
-                                    source: feedUrl,
-                                    favicon: faviconUrl
-                                })))
-                            .catch(err => {
-                                Log.error("MMM-IsraelNews: Error fetching RSS from " + feedUrl + ": ", err.message);
-                                return []; // Return empty array for failed sources
-                            });
-                    }
+                                    source: feedUrl
+                                })),
+                                faviconUrl
+                            )
+                        )
+                        .catch((err) => {
+                            Log.error("MMM-IsraelNews: Error fetching RSS from " + feedUrl + ": ", err.message);
+                            return [];
+                        });
                 });
                 
                 // Wait for all feeds to complete

@@ -4,8 +4,7 @@ A MagicMirror module for displaying news headlines from Israeli news sources in 
 
 ## Features
 
-- **Mixed Source Support**: Supports both RSS feeds and HTML news flash pages
-- **Automatic URL Type Detection**: Automatically detects whether a URL is RSS or HTML
+- **Mixed sources**: RSS feeds, optional HTML scraping, כאן מבזקים (`kan-newsflash`), i24NEWS (`i24-news`)
 - **Robust XML Parsing**: Handles malformed RSS feeds with automatic XML cleanup
 - **Favicon Display**: Shows source favicons next to news items
 - **Time Filtering**: Filter news by publication time (e.g., last 4 hours)
@@ -21,7 +20,7 @@ cd ~/MagicMirror/modules
 
 2. Clone this repository:
 ```bash
-git clone https://github.com/yourusername/MMM-IsraelNews.git
+git clone https://github.com/neshkoli/MMM-IsraelNews.git
 ```
 
 3. Install dependencies:
@@ -29,6 +28,8 @@ git clone https://github.com/yourusername/MMM-IsraelNews.git
 cd MMM-IsraelNews
 npm install
 ```
+
+(`package-lock.json` is not tracked in git; installs follow `package.json`.)
 
 ## Configuration
 

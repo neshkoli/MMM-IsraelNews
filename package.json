@@ -3,9 +3,6 @@
   "version": "1.0.0",
   "description": "A MagicMirror module for displaying news headlines from Israeli news sources in Hebrew.",
   "main": "MMM-IsraelNews.js",
-  "scripts": {
-    "start": "node node_helper.js"
-  },
   "dependencies": {
     "axios": "^1.6.0",
     "cheerio": "1.0.0-rc.12",
