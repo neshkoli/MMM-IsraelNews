@@ -73,6 +73,45 @@ function withFavicon(items, faviconUrl) {
     return items.map((item) => ({ ...item, favicon: faviconUrl }));
 }
 
+/** One-line explanation for logs (axios, RSS, DNS, TLS, etc.). */
+function formatFetchError(err) {
+    if (err == null) {
+        return "unknown error";
+    }
+    if (err.response) {
+        const st = err.response.status;
+        const stText = err.response.statusText || "";
+        return `HTTP ${st} ${stText}`.trim() + (err.message ? ` — ${err.message}` : "");
+    }
+    if (err.code) {
+        return `${err.code}: ${err.message || err}`;
+    }
+    return err.message || String(err);
+}
+
+/**
+ * Resolves to { items, sourceFailed, sourceLabel, errorDetail? } for per-source logging and stale-cache logic.
+ */
+function wrapSourceFetch(label, itemsPromise) {
+    const safeLabel = label || "unknown";
+    return itemsPromise
+        .then((items) => ({
+            items: Array.isArray(items) ? items : [],
+            sourceFailed: false,
+            sourceLabel: safeLabel
+        }))
+        .catch((err) => {
+            const detail = formatFetchError(err);
+            Log.error(`MMM-IsraelNews: SOURCE_FAIL [${safeLabel}] ${detail}`);
+            return {
+                items: [],
+                sourceFailed: true,
+                sourceLabel: safeLabel,
+                errorDetail: detail
+            };
+        });
+}
+
 module.exports = NodeHelper.create({
     start: function() {
         Log.info("MMM-IsraelNews: Node helper starting...");
@@ -80,6 +119,9 @@ module.exports = NodeHelper.create({
         // Initialize IconUtils
         this.iconUtils = new IconUtils();
         
+        // Last successful merged+filtered list (used when every source fails on a refresh)
+        this.lastSuccessfulNews = [];
+
         // Initialize reload timer
         this.reloadTimer = null;
         this.currentConfig = null;
@@ -209,10 +251,6 @@ module.exports = NodeHelper.create({
             }
             
             return items;
-        })
-        .catch(err => {
-            Log.error("MMM-IsraelNews: Error scraping HTML from " + url + ": ", err.message);
-            return []; // Return empty array for failed sources
         });
     },
 
@@ -308,8 +346,8 @@ module.exports = NodeHelper.create({
                     });
             })
             .catch((err) => {
-                Log.error("MMM-IsraelNews: Error fetching Kan newsflash: ", err.message);
-                return [];
+                Log.error("MMM-IsraelNews: Error fetching Kan newsflash: " + formatFetchError(err));
+                throw err;
             });
     },
 
@@ -353,8 +391,8 @@ module.exports = NodeHelper.create({
                 return items;
             })
             .catch((err) => {
-                Log.error("MMM-IsraelNews: Error fetching i24NEWS: ", err.message);
-                return [];
+                Log.error("MMM-IsraelNews: Error fetching i24NEWS: " + formatFetchError(err));
+                throw err;
             });
     },
 
@@ -382,25 +420,35 @@ module.exports = NodeHelper.create({
         this.iconUtils.getFaviconUrls(urlsForFavicon)
             .then(faviconMap => {
                 // Create promises for all sources (RSS and HTML)
-                const fetchPromises = urlArray.map(sourceConfig => {
+                const fetchPromises = urlArray.map((sourceConfig) => {
                     const faviconKey = sourceUrlForFavicon(sourceConfig);
                     const feedUrl = typeof sourceConfig === "string" ? sourceConfig : sourceConfig.url;
-                    const sourceType = typeof sourceConfig === 'object' ? sourceConfig.type : 'rss';
+                    const sourceType = typeof sourceConfig === "object" ? sourceConfig.type : "rss";
                     const faviconUrl = faviconMap.get(faviconKey);
-                    
+                    const label = faviconKey || feedUrl || "unknown";
+
                     if (sourceType === "html") {
-                        return this.scrapeHtmlNews(sourceConfig).then((items) => withFavicon(items, faviconUrl));
+                        return wrapSourceFetch(
+                            label,
+                            this.scrapeHtmlNews(sourceConfig).then((items) => withFavicon(items, faviconUrl))
+                        );
                     }
                     if (sourceType === "kan-newsflash") {
-                        return this.fetchKanNewsflash(sourceConfig).then((items) => withFavicon(items, faviconUrl));
+                        return wrapSourceFetch(
+                            label,
+                            this.fetchKanNewsflash(sourceConfig).then((items) => withFavicon(items, faviconUrl))
+                        );
                     }
                     if (sourceType === "i24-news") {
-                        return this.fetchI24News(sourceConfig).then((items) => withFavicon(items, faviconUrl));
+                        return wrapSourceFetch(
+                            label,
+                            this.fetchI24News(sourceConfig).then((items) => withFavicon(items, faviconUrl))
+                        );
                     }
                     // RSS (default)
-                    return this.parser
-                        .parseURL(feedUrl)
-                        .then((feed) =>
+                    return wrapSourceFetch(
+                        label,
+                        this.parser.parseURL(feedUrl).then((feed) =>
                             withFavicon(
                                 feed.items.map((item) => ({
                                     title: item.title || "No title",
@@ -412,19 +460,24 @@ module.exports = NodeHelper.create({
                                 faviconUrl
                             )
                         )
-                        .catch((err) => {
-                            Log.error("MMM-IsraelNews: Error fetching RSS from " + feedUrl + ": ", err.message);
-                            return [];
-                        });
+                    );
                 });
-                
+
                 // Wait for all feeds to complete
                 return Promise.all(fetchPromises);
             })
-            .then(async feedsResults => {
-                // Flatten all results into a single array
-                const allNewsItems = feedsResults.flat();
+            .then(async (feedsResults) => {
+                const allNewsItems = feedsResults.flatMap((r) => r.items);
+                const allSourcesFailed =
+                    feedsResults.length > 0 && feedsResults.every((r) => r.sourceFailed);
                 Log.info("MMM-IsraelNews: Total items collected: " + allNewsItems.length);
+                if (allSourcesFailed) {
+                    Log.error(
+                        "MMM-IsraelNews: Every source failed this round (" +
+                            feedsResults.length +
+                            " source(s)). See SOURCE_FAIL lines above."
+                    );
+                }
                 
                 // Filter items by publication date (only show items within the specified hours back)
                 const now = new Date();
@@ -460,9 +513,28 @@ module.exports = NodeHelper.create({
                     if (isNaN(dateB.getTime())) return -1;
                     return dateB - dateA; // Descending order (newest first)
                 });
-                
-                Log.info("MMM-IsraelNews: Sending " + filteredNewsItems.length + " news items");
-                self.sendSocketNotification("NEWS_RESULT", filteredNewsItems);
+
+                let outItems = filteredNewsItems;
+                let stale = false;
+                if (filteredNewsItems.length === 0 && allSourcesFailed && self.lastSuccessfulNews.length > 0) {
+                    outItems = self.lastSuccessfulNews.slice();
+                    stale = true;
+                    Log.warn(
+                        "MMM-IsraelNews: Showing " +
+                            outItems.length +
+                            " cached headline(s) (stale) — all sources failed; will retry on next interval."
+                    );
+                } else if (filteredNewsItems.length > 0) {
+                    self.lastSuccessfulNews = filteredNewsItems.slice();
+                }
+
+                Log.info(
+                    "MMM-IsraelNews: Sending " +
+                        outItems.length +
+                        " news item(s)" +
+                        (stale ? " (stale cache)" : "")
+                );
+                self.sendSocketNotification("NEWS_RESULT", { items: outItems, stale: stale });
 
                 // Re-fetch missing favicons for non-bundled sources (bundled icons are in icons/)
                 const missingIcons = urlsForFavicon.filter(url => !self.iconUtils.getBuiltinIcon(url) && !self.iconUtils.getCachedIconPath(url));
@@ -474,10 +546,14 @@ module.exports = NodeHelper.create({
                 // Schedule the next reload after successful fetch
                 self.scheduleReload();
             })
-            .catch(err => {
-                Log.error("MMM-IsraelNews: Error processing sources: ", err.message);
-                self.sendSocketNotification("NEWS_ERROR", err.message);
-                
+            .catch((err) => {
+                const detail = formatFetchError(err);
+                Log.error("MMM-IsraelNews: BATCH_FAIL (before/during merge) " + detail);
+                self.sendSocketNotification("NEWS_ERROR", {
+                    message: err && err.message ? err.message : String(err),
+                    detail: detail
+                });
+
                 // Schedule the next reload even on error to keep trying
                 self.scheduleReload();
             });

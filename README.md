@@ -120,6 +120,14 @@ Optional fields on the source object:
 | `locale` | `he`, `en`, `fr`, or `ar` — inferred from `url` if omitted |
 | `apiBaseUrl` | Default `https://api.i24news.tv` |
 
+## Logs and stale headlines
+
+- **Per-source failures** are logged as: `MMM-IsraelNews: SOURCE_FAIL [<source>] <reason>` — the reason includes HTTP status (when applicable), Node error codes such as `ENOTFOUND`, `ETIMEDOUT`, `ECONNRESET`, or TLS messages.
+- If **every** source fails in one refresh, the module **reuses the last successful headline list** (stale) until at least one source works again; look for `Showing … cached headline(s)` / `stale` in the logs.
+- **Batch failures** before feeds are merged (e.g. favicon step) log `BATCH_FAIL` and the UI keeps the previous headlines.
+
+Include `ERROR` in `config.logLevel` in MagicMirror’s main `config.js` so these lines appear in the console or log file.
+
 ## Configuration Options
 
 | Option | Default | Description |

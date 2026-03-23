@@ -241,32 +241,43 @@ Module.register("MMM-IsraelNews", {
         Log.info("MMM-IsraelNews: Received notification: " + notification + " at " + new Date().toLocaleTimeString());
         
         if (notification === "NEWS_RESULT") {
-            Log.info("MMM-IsraelNews: Received " + payload.length + " news items");
-            
+            const data = Array.isArray(payload) ? { items: payload, stale: false } : payload || { items: [] };
+            const items = data.items || [];
+
+            Log.info(
+                "MMM-IsraelNews: Received " +
+                    items.length +
+                    " news item(s)" +
+                    (data.stale ? " — displaying cached headlines (network failed for all sources)" : "")
+            );
+
             // Update state
             this.updateState.isRequestInProgress = false;
             this.updateState.lastUpdateTime = Date.now();
             this.updateState.retryCount = 0; // Reset retry count on success
-            
-            // Log some details about the received items for debugging
-            if (payload.length > 0) {
-                Log.info("MMM-IsraelNews: First item: " + payload[0].title.substring(0, 50) + "...");
-                Log.info("MMM-IsraelNews: Latest item date: " + payload[0].pubDate);
+
+            if (items.length > 0) {
+                Log.info("MMM-IsraelNews: First item: " + items[0].title.substring(0, 50) + "...");
+                Log.info("MMM-IsraelNews: Latest item date: " + items[0].pubDate);
             }
-            
-            this.newsItems = payload;
+
+            this.newsItems = items;
             this.loaded = true;
             this.updateDom();
-            
         } else if (notification === "NEWS_ERROR") {
-            Log.error("MMM-IsraelNews: Error fetching news", payload);
-            
-            // Update state
+            let msg;
+            if (typeof payload === "string") {
+                msg = payload;
+            } else if (payload && typeof payload === "object") {
+                msg = payload.detail || payload.message || JSON.stringify(payload);
+            } else {
+                msg = String(payload);
+            }
+            Log.error("MMM-IsraelNews: Fetch batch failed — " + msg);
+
             this.updateState.isRequestInProgress = false;
-            
-            // Don't update lastUpdateTime on error to trigger health check if needed
             this.loaded = true;
-            this.updateDom();
+            // Keep previous headlines; do not clear newsItems or rebuild DOM
         }
     },
 
