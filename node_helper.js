@@ -7,6 +7,9 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const { DateTime } = require("luxon");
 
+/** כאן מבזקים — Umbraco + Luxon always use Israel civil time (no user override). */
+const KAN_ISRAEL_TIMEZONE = "Asia/Jerusalem";
+
 /** KAN and similar sites often 403 minimal bots; match a real browser. */
 function browserLikeAxiosConfig() {
     return {
@@ -260,7 +263,6 @@ module.exports = NodeHelper.create({
      */
     fetchKanNewsflash: function(sourceConfig) {
         const pageUrl = sourceConfig.url || "https://www.kan.org.il/newsflash";
-        const timeZone = sourceConfig.timeZone || "Asia/Jerusalem";
         const axiosOpts = browserLikeAxiosConfig();
 
         Log.info("MMM-IsraelNews: Fetching Kan newsflash from page: " + pageUrl);
@@ -289,7 +291,7 @@ module.exports = NodeHelper.create({
                         ...axiosOpts,
                         headers: apiHeaders,
                         params: {
-                            timeZone,
+                            timeZone: KAN_ISRAEL_TIMEZONE,
                             currentPageId: pageId,
                             isMobileApp: false
                         },
@@ -316,7 +318,7 @@ module.exports = NodeHelper.create({
                                 if (!title || title.length < 3) {
                                     return;
                                 }
-                                const pubDate = parseKanFlashPubDate(dateToken, timeText, timeZone);
+                                const pubDate = parseKanFlashPubDate(dateToken, timeText, KAN_ISRAEL_TIMEZONE);
                                 const row = {
                                     title,
                                     link: link || pageUrl,

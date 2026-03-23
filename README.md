@@ -88,8 +88,7 @@ Add the module to your `config/config.js` file:
             // כאן 11 מבזקים — loaded in the browser via Umbraco; use this type (not HTML scrape)
             {
                 type: "kan-newsflash",
-                url: "https://www.kan.org.il/newsflash",
-                timeZone: "Asia/Jerusalem"
+                url: "https://www.kan.org.il/newsflash"
             },
 
             {
@@ -103,11 +102,11 @@ Add the module to your `config/config.js` file:
 
 ## כאן (Kan) newsflash
 
-The [מבזקים](https://www.kan.org.il/newsflash) page renders an empty shell in the initial HTML and fills the list with a request to `/umbraco/surface/NewsFlashSurface/GetNews`. The module reproduces that flow: it reads `data-page-id` from the page, calls the same endpoint with `timeZone` and `currentPageId`, then parses `.f-news__item` rows (time, headline, optional `a.card-link`).
+The [מבזקים](https://www.kan.org.il/newsflash) page renders an empty shell in the initial HTML and fills the list with a request to `/umbraco/surface/NewsFlashSurface/GetNews`. The module reproduces that flow: it reads `data-page-id` from the page, calls the same endpoint with `timeZone=Asia/Jerusalem` and `currentPageId`, then parses `.f-news__item` rows (time, headline, optional `a.card-link`). Dates and times are always interpreted in **Israel** (`Asia/Jerusalem`); there is no separate `timeZone` config.
 
 Use browser-like HTTP headers for `kan.org.il`; very minimal `User-Agent` strings may receive HTTP 403.
 
-**`newsHoursBack` and מבזקים:** כאן rows use the headline date and time on the page (parsed in `timeZone`, default `Asia/Jerusalem`), so they follow the same **`newsHoursBack`** window as RSS and i24. If you want to show all rows returned by the site (today / אתמול) regardless of `newsHoursBack`, set **`kanIgnoreNewsHoursBack: true`** on that source object.
+**`newsHoursBack` and מבזקים:** כאן rows use the headline date and time on the page (parsed in **Israel time**), so they follow the same **`newsHoursBack`** window as RSS and i24. If you want to show all rows returned by the site (today / אתמול) regardless of `newsHoursBack`, set **`kanIgnoreNewsHoursBack: true`** on that source object.
 
 ## i24NEWS (עדכונים)
 

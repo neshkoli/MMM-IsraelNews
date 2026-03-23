@@ -19,7 +19,7 @@ Module.register("MMM-IsraelNews", {
             //     linkSelector: "a"
             // }
             // Kan מבזקים (client-rendered): use the Umbraco-backed fetcher, not type "html":
-            // { type: "kan-newsflash", url: "https://www.kan.org.il/newsflash", timeZone: "Asia/Jerusalem" }
+            // { type: "kan-newsflash", url: "https://www.kan.org.il/newsflash" }
             // Optional: kanIgnoreNewsHoursBack: true — show all כאן rows, ignore newsHoursBack
             // i24NEWS עדכונים (JSON API):
             // { type: "i24-news", url: "https://www.i24news.tv/he/news" }
