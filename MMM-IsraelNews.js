@@ -86,6 +86,55 @@ Module.register("MMM-IsraelNews", {
             this._scrollResizeObserver.disconnect();
             this._scrollResizeObserver = null;
         }
+        if (this._viewportResizeObserver) {
+            this._viewportResizeObserver.disconnect();
+            this._viewportResizeObserver = null;
+        }
+        if (this._viewportResizeDebounceTimer != null) {
+            clearTimeout(this._viewportResizeDebounceTimer);
+            this._viewportResizeDebounceTimer = null;
+        }
+    },
+
+    /**
+     * Stops the scroll rAF loop and the container ResizeObserver (loop height sync).
+     * Keeps the viewport / wrapper ResizeObserver — use full stopSmoothScroll() when rebuilding DOM.
+     */
+    _stopScrollAnimationOnly: function () {
+        if (this._scrollRafId != null) {
+            cancelAnimationFrame(this._scrollRafId);
+            this._scrollRafId = null;
+        }
+        if (this._scrollStartTimeout != null) {
+            clearTimeout(this._scrollStartTimeout);
+            this._scrollStartTimeout = null;
+        }
+        if (this._scrollResizeObserver) {
+            this._scrollResizeObserver.disconnect();
+            this._scrollResizeObserver = null;
+        }
+    },
+
+    /**
+     * Sets the scroll viewport height to the sum of the first numLines .news-item rows
+     * so exactly that many rows are visible (handles wrapped headlines).
+     */
+    _applyNumLinesViewportHeight: function (viewport, container) {
+        const n = Math.max(1, parseInt(this.config.numLines, 10) || 4);
+        const items = container.querySelectorAll(".news-item");
+        if (items.length === 0) {
+            return;
+        }
+        const count = Math.min(n, items.length);
+        let h = 0;
+        for (let i = 0; i < count; i++) {
+            h += items[i].offsetHeight;
+        }
+        if (h <= 0) {
+            return;
+        }
+        viewport.style.height = h + "px";
+        viewport.style.maxHeight = h + "px";
     },
 
     /**
@@ -325,7 +374,8 @@ Module.register("MMM-IsraelNews", {
             // Restart JS scroll (suspend stops rAF; CSS animation did not need this)
             if (this._scrollViewport && this._scrollContainer &&
                 this._scrollViewport.isConnected && this._scrollContainer.isConnected) {
-                this.stopSmoothScroll();
+                this._stopScrollAnimationOnly();
+                this._applyNumLinesViewportHeight(this._scrollViewport, this._scrollContainer);
                 this._runSmoothScroll(this._scrollViewport, this._scrollContainer);
             }
         }, 100);
@@ -427,9 +477,9 @@ Module.register("MMM-IsraelNews", {
         createNewsItems();
         createNewsItems();
 
-        wrapper.style.setProperty('--news-lines', this.config.numLines);
+        const numLines = Math.max(1, parseInt(this.config.numLines, 10) || 4);
 
-        if (this.newsItems.length > this.config.numLines) {
+        if (this.newsItems.length > numLines) {
             const viewport = document.createElement("div");
             viewport.className = "news-scroll-viewport";
             viewport.appendChild(newsContainer);
@@ -441,7 +491,31 @@ Module.register("MMM-IsraelNews", {
             const self = this;
             this._scrollStartTimeout = setTimeout(() => {
                 self._scrollStartTimeout = null;
-                self._runSmoothScroll(viewport, newsContainer);
+                const applyAndScroll = () => {
+                    self._applyNumLinesViewportHeight(viewport, newsContainer);
+                    self._runSmoothScroll(viewport, newsContainer);
+                };
+                requestAnimationFrame(() => {
+                    applyAndScroll();
+                    requestAnimationFrame(() => {
+                        self._applyNumLinesViewportHeight(viewport, newsContainer);
+                    });
+                    if (typeof ResizeObserver !== "undefined") {
+                        if (self._viewportResizeObserver) {
+                            self._viewportResizeObserver.disconnect();
+                        }
+                        self._viewportResizeObserver = new ResizeObserver(() => {
+                            clearTimeout(self._viewportResizeDebounceTimer);
+                            self._viewportResizeDebounceTimer = setTimeout(() => {
+                                self._viewportResizeDebounceTimer = null;
+                                requestAnimationFrame(() => {
+                                    self._applyNumLinesViewportHeight(viewport, newsContainer);
+                                });
+                            }, 80);
+                        });
+                        self._viewportResizeObserver.observe(wrapper);
+                    }
+                });
             }, 0);
         } else {
             this._scrollViewport = null;

@@ -131,7 +131,7 @@ Include `ERROR` in `config.logLevel` in MagicMirror’s main `config.js` so thes
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `numLines` | `10` | Number of news lines to display at once |
+| `numLines` | `10` | How many **news rows** (`news-item`) are visible in the scroll window when scrolling; height is measured from the first `numLines` rows (including wrapped headings). |
 | `scrollSpeed` | `200` | Speed of scrolling animation (milliseconds per item) |
 | `updateInterval` | `300` | Update interval in seconds (300 = 5 minutes) |
 | `newsHoursBack` | `4` | Show news from the last X hours only |
