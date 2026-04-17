@@ -4,6 +4,7 @@ Module.register("MMM-IsraelNews", {
         scrollSpeed: 200,
         updateInterval: 300, // 5 minutes (300 seconds)
         newsHoursBack: 1, // Show news from the last 1 hour only
+        shrinkUnderQuota: false, // Prevents repeating items if retrieved articles are fewer than numLines
         urls: [
             "https://www.ynet.co.il/Integration/StoryRss1854.xml",
             "https://www.inn.co.il/Rss.aspx",
@@ -473,13 +474,16 @@ Module.register("MMM-IsraelNews", {
             });
         };
 
-        // Add items twice for seamless infinite scroll
-        createNewsItems();
-        createNewsItems();
-
         const numLines = Math.max(1, parseInt(this.config.numLines, 10) || 4);
 
-        if (this.newsItems.length > numLines) {
+        // Add items once initially
+        createNewsItems();
+
+        const shouldScroll = !this.config.shrinkUnderQuota || this.newsItems.length > numLines;
+
+        if (shouldScroll) {
+            // Add items a second time for seamless infinite scroll
+            createNewsItems();
             const viewport = document.createElement("div");
             viewport.className = "news-scroll-viewport";
             viewport.appendChild(newsContainer);
